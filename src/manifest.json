@@ -1,0 +1,38 @@
+{
+  "manifest_version": 3,
+  "name": "Pro-Q Equalizer",
+  "version": "1.0.0",
+  "description": "파라메트릭 이퀄라이저 - Web Audio API를 통한 주파수 제어 및 시각화",
+  "permissions": [
+    "tabCapture",
+    "activeTab",
+    "scripting"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "src/background.ts",
+    "type": "module"
+  },
+  "action": {
+    "default_popup": "src/popup/popup.html",
+    "default_title": "Pro-Q Equalizer"
+  },
+  "offscreen_documents": [
+    {
+      "document": "src/offscreen.html",
+      "matches": [
+        "<all_urls>"
+      ],
+      "reasons": [
+        "AUDIO_PLAYBACK"
+      ]
+    }
+  ],
+  "icons": {
+    "16": "/icons/icon-16.png",
+    "48": "/icons/icon-48.png",
+    "128": "/icons/icon-128.png"
+  }
+}
