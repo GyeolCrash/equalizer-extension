@@ -1,4 +1,5 @@
 import { defineConfig } from 'vite';
+import fs from 'fs';
 import path from 'path';
 
 export default defineConfig({
@@ -17,10 +18,28 @@ export default defineConfig({
         background: path.resolve(__dirname, 'src/background.ts')
       },
       output: {
-        entryFileNames: '[name].js'
+        entryFileNames: '[name].js',
+        chunkFileNames: 'chunks/[name].js',
+        assetFileNames: 'assets/[name].[ext]'
       }
     }
   },
+  plugins: [
+    {
+      name: 'copy-manifest',
+      generateBundle() {
+        const manifestContent = fs.readFileSync(
+          path.resolve(__dirname, 'src/manifest.json'),
+          'utf-8'
+        );
+        this.emitFile({
+          fileName: 'manifest.json',
+          source: manifestContent,
+          type: 'asset'
+        });
+      }
+    }
+  ],
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src')

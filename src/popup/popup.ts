@@ -14,8 +14,10 @@ interface FilterState {
 class PopupUI {
   private canvas: HTMLCanvasElement | null = null;
   private canvasCtx: CanvasRenderingContext2D | null = null;
-  private animationId: number | null = null;
-  private filters: FilterState[] = [];
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  private _animationId: number | null = null;
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  private _filters: FilterState[] = [];
 
   constructor() {
     this.initializeUI();
@@ -193,7 +195,7 @@ class PopupUI {
 
                 // Offscreen Document로 스트림 전달
                 chrome.runtime.sendMessage({
-                  type: 'SETUP_AUDIO',
+                  type: 'CAPTURE_AUDIO_STREAM',
                   stream: stream
                 });
 
@@ -226,7 +228,7 @@ class PopupUI {
           if (response?.data) {
             this.drawFrequencyBars(new Uint8Array(response.data));
           }
-          this.animationId = requestAnimationFrame(draw);
+          this._animationId = requestAnimationFrame(draw);
         }
       );
     };
