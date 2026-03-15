@@ -1,4 +1,4 @@
-# Pro-Q Equalizer Chrome Extension - 빌드 환경 최적화 보고서
+# Parametric Equalizer Chrome Extension - 빌드 환경 최적화 보고서
 
 **생성일**: 2026년 3월 6일  
 **최종 상태**: ✅ 완료

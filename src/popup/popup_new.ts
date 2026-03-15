@@ -17,7 +17,6 @@ class EQVisualizer {
   private ctx: CanvasRenderingContext2D;
   private nodes: EQNode[] = [];
   private selectedNodeId: number | null = null;
-  private draggingNode: EQNode | null = null;
   private nextNodeId = 0;
   private frequencyData: Uint8Array | null = null;
   private isVisualizationRunning = false;
@@ -42,59 +41,28 @@ class EQVisualizer {
   }
 
   private setupEventListeners() {
-    // 마우스 다운 - 노드 선택 또는 새 노드 추가
-    this.canvas.addEventListener('mousedown', (e) => {
-      if (e.button !== 0) return; // 좌클릭만
-      
+    // 더블클릭 - 새 노드 추가
+    this.canvas.addEventListener('dblclick', (e) => {
       const rect = this.canvas.getBoundingClientRect();
       const x = e.clientX - rect.left;
       const y = e.clientY - rect.top;
 
-      // 클릭한 위치의 노드 찾기
-      const node = this.getNodeAtPosition(x, y);
-      
-      if (node) {
-        // 기존 노드 선택 + 드래그 준비
-        this.selectNode(node.id);
-        this.draggingNode = node;
-      } else if (this.isInGraphArea(x, y)) {
-        // 새 노드 추가 (5개 제한)
-        if (this.nodes.length < 5) {
-          this.addNode(x, y);
-          this.draggingNode = this.nodes[this.nodes.length - 1];
-        } else {
-          console.warn('최대 5개의 필터만 추가 가능합니다.');
-        }
-      }
-    });
-
-    // 마우스 이동 - 노드 드래그
-    document.addEventListener('mousemove', (e) => {
-      if (!this.draggingNode) return;
-
-      const rect = this.canvas.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const y = e.clientY - rect.top;
-
-      // 그래프 범위 내에서만 움직임
       if (this.isInGraphArea(x, y)) {
-        this.draggingNode.frequency = this.xToFrequency(x);
-        this.draggingNode.gain = this.yToGain(y);
-
-        // 제한 범위 적용
-        this.draggingNode.frequency = Math.max(20, Math.min(10000, this.draggingNode.frequency));
-        this.draggingNode.gain = Math.max(-12, Math.min(12, this.draggingNode.gain));
-
-        this.updateControlPanel();
-        this.drawGraph();
+        this.addNode(x, y);
       }
     });
 
-    // 마우스 업 - 드래그 종료
-    document.addEventListener('mouseup', () => {
-      if (this.draggingNode) {
-        this.sendFilterUpdate(this.draggingNode.id);
-        this.draggingNode = null;
+    // 좌클릭 - 노드 선택
+    this.canvas.addEventListener('click', (e) => {
+      if ((e as any).detail !== 1) return; // 더블클릭 제외
+      
+      const rect = this.canvas.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+
+      const node = this.getNodeAtPosition(x, y);
+      if (node) {
+        this.selectNode(node.id);
       }
     });
 
@@ -130,12 +98,6 @@ class EQVisualizer {
   }
 
   addNode(x: number, y: number) {
-    // 필터 5개 제한
-    if (this.nodes.length >= 5) {
-      console.warn('최대 5개의 필터만 추가 가능합니다.');
-      return;
-    }
-    
     const id = this.nextNodeId++;
     const node: EQNode = {
       id,
@@ -148,32 +110,14 @@ class EQVisualizer {
 
     this.nodes.push(node);
     this.selectNode(id);
-    
-    // 1. 먼저 offscreen에 필터 생성 (ADD_FILTER)
-    chrome.runtime.sendMessage({
-      type: 'ADD_FILTER',
-      nodeId: id,
-      frequency: Math.round(node.frequency)
-    }, (response) => {
-      if (chrome.runtime.lastError) {
-        console.error(`ADD_FILTER 에러 (nodeId=${id}):`, chrome.runtime.lastError.message);
-        return;
-      }
-      if (response?.success) {
-        // 2. 필터 생성 후 설정 업데이트
-        this.sendFilterUpdate(id);
-      } else {
-        console.error(`필터 ${id} 추가 실패`);
-      }
-    });
-    
+    this.sendFilterUpdate(id);
     this.updateNodeList();
     this.drawGraph();
   }
 
   removeNode(nodeId: number) {
     const index = this.nodes.findIndex(n => n.id === nodeId);
-    if (index === -1) return;
+    if (index === -1 || this.nodes.length <= 1) return;
 
     this.nodes.splice(index, 1);
 
@@ -185,7 +129,9 @@ class EQVisualizer {
       type: 'REMOVE_FILTER',
       nodeId: nodeId
     }, () => {
-      // lastError는 자동으로 초기화됨
+      if (chrome.runtime.lastError) {
+        console.error('Remove filter error:', chrome.runtime.lastError.message);
+      }
     });
 
     this.updateNodeList();
@@ -528,12 +474,8 @@ class EQVisualizer {
 
   private sendFilterUpdate(nodeId: number) {
     const node = this.nodes.find(n => n.id === nodeId);
-    if (!node) {
-      console.warn(`노드 ${nodeId}을 찾을 수 없습니다.`);
-      return;
-    }
+    if (!node) return;
 
-    // UPDATE_FILTER: 필터 파라미터 업데이트 (필터는 이미 생성되어 있어야 함)
     chrome.runtime.sendMessage({
       type: 'UPDATE_FILTER',
       nodeId: nodeId,
@@ -545,19 +487,9 @@ class EQVisualizer {
       }
     }, (response) => {
       if (chrome.runtime.lastError) {
-        // "Message port closed" 에러는 offscreen이 응답하지 못한 경우
-        // 이는 정상이므로 무시
-        const msg = chrome.runtime.lastError.message || 'Unknown error';
-        if (!msg.includes('Message port closed')) {
-          console.error(`UPDATE_FILTER 에러 (nodeId=${nodeId}):`, msg);
-        }
+        console.error('Update filter error:', chrome.runtime.lastError.message);
       }
     });
-  }
-
-  deleteSelectedNode() {
-    if (this.selectedNodeId === null) return;
-    this.removeNode(this.selectedNodeId);
   }
 
   reset() {
@@ -599,81 +531,15 @@ function initializeUI() {
     });
   }
 
-  // 선택된 필터 삭제 버튼
-  const deleteBtn = document.getElementById('deleteButton');
-  if (deleteBtn) {
-    deleteBtn.addEventListener('click', () => {
-      visualizer.deleteSelectedNode();
-    });
-  }
-
-  // 오디오 캡처 토글 버튼
-  const captureBtn = document.getElementById('captureButton') as HTMLButtonElement;
-  const captureStatus = document.getElementById('captureStatus') as HTMLElement;
-  let isCapturing = false;
-
-  if (captureBtn) {
-    captureBtn.addEventListener('click', () => {
-      isCapturing = !isCapturing;
-
-      if (isCapturing) {
-        // 캡처 시작
-        console.log('[Popup] 오디오 캡처 시작 버튼 클릭');
-        captureBtn.textContent = '🎤 오디오 캡처 중지';
-        captureBtn.classList.add('active');
-        if (captureStatus) {
-          captureStatus.textContent = '캡처 중...';
-          captureStatus.classList.add('active');
-        }
-
-        chrome.runtime.sendMessage({ type: 'START_CAPTURE' }, (response) => {
-          if (chrome.runtime.lastError) {
-            console.error('[Popup] START_CAPTURE 오류:', chrome.runtime.lastError.message);
-            if (captureStatus) {
-              captureStatus.textContent = '캡처 실패';
-              captureStatus.classList.remove('active');
-            }
-            isCapturing = false;
-            captureBtn.textContent = '🎤 오디오 캡처 시작';
-            captureBtn.classList.remove('active');
-          } else if (response?.success) {
-            console.log('[Popup] ✓ 오디오 캡처 시작 완료');
-            if (captureStatus) {
-              captureStatus.textContent = '캡처 중...';
-            }
-          }
-        });
-      } else {
-        // 캡처 중지
-        console.log('[Popup] 오디오 캡처 중지 버튼 클릭');
-        captureBtn.textContent = '🎤 오디오 캡처 시작';
-        captureBtn.classList.remove('active');
-        if (captureStatus) {
-          captureStatus.textContent = '대기 중';
-          captureStatus.classList.remove('active');
-        }
-
-        chrome.runtime.sendMessage({ type: 'STOP_CAPTURE' }, (response) => {
-          if (chrome.runtime.lastError) {
-            console.log('[Popup] STOP_CAPTURE 응답:', chrome.runtime.lastError.message);
-          } else if (response?.success) {
-            console.log('[Popup] ✓ 오디오 캡처 중지 완료');
-          }
-        });
-      }
+  // 초기화 버튼
+  const resetBtn = document.getElementById('resetButton');
+  if (resetBtn) {
+    resetBtn.addEventListener('click', () => {
+      visualizer.reset();
     });
   }
 }
 
 document.addEventListener('DOMContentLoaded', initializeUI);
-
-/**
- * 팝업이 예기치 않게 닫혔을 때 캡처 정리 (사용자가 명시적으로 중지하지 않은 경우)
- * 일반적으로는 사용자가 캡처 중지 버튼을 클릭하여 STOP_CAPTURE를 전송함
- */
-window.addEventListener('unload', () => {
-  // 팝업 강제 종료 시 정리
-  chrome.runtime.sendMessage({ type: 'STOP_CAPTURE' });
-});
 
 export {};

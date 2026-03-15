@@ -1,7 +1,7 @@
 {
   "name": "equalizer-extension",
   "version": "1.0.0",
-  "description": "Pro-Q 스타일의 파라메트릭 이퀄라이저 Chrome 확장 프로그램",
+  "description": "파라메트릭 이퀄라이저 Chrome 확장 프로그램",
   "type": "module",
   "scripts": {
     "dev": "vite",

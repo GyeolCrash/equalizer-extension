@@ -1,12 +1,14 @@
 {
   "manifest_version": 3,
-  "name": "Pro-Q Equalizer",
+  "name": "Graph-based Audio Equalizer",
   "version": "1.0.0",
-  "description": "파라메트릭 이퀄라이저 - Web Audio API를 통한 주파수 제어 및 시각화",
+  "description": "동적 그래프 기반 이퀄라이저 - Web Audio API를 통한 자유로운 주파수 제어 및 실시간 시각화",
   "permissions": [
     "tabCapture",
     "activeTab",
-    "scripting"
+    "scripting",
+    "offscreen",
+    "tabs"
   ],
   "host_permissions": [
     "<all_urls>"
@@ -17,19 +19,8 @@
   },
   "action": {
     "default_popup": "src/popup/popup.html",
-    "default_title": "Pro-Q Equalizer"
+    "default_title": "Parametric Equalizer"
   },
-  "offscreen_documents": [
-    {
-      "document": "src/offscreen.html",
-      "matches": [
-        "<all_urls>"
-      ],
-      "reasons": [
-        "AUDIO_PLAYBACK"
-      ]
-    }
-  ],
   "icons": {
     "16": "/icons/icon-16.png",
     "48": "/icons/icon-48.png",
