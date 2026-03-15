@@ -6,9 +6,7 @@
   "permissions": [
     "tabCapture",
     "activeTab",
-    "scripting",
-    "offscreen",
-    "tabs"
+    "offscreen"
   ],
   "host_permissions": [
     "<all_urls>"
