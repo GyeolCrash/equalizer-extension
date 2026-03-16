@@ -1,8 +1,3 @@
-/**
- * Background Service Worker
- * 장기 연결(Port) 기반의 상태 중계 및 경합 조건이 제거된 Offscreen 초기화 로직
- */
-
 let isCapturing = false;
 let offscreenPort: chrome.runtime.Port | null = null;
 let popupPort: chrome.runtime.Port | null = null;
@@ -10,6 +5,12 @@ let popupPort: chrome.runtime.Port | null = null;
 chrome.runtime.onConnect.addListener((port) => {
   if (port.name === 'offscreen-port') {
     offscreenPort = port;
+    
+    // 오프스크린에서 전송된 상태 동기화 메시지를 팝업으로 중계
+    offscreenPort.onMessage.addListener((msg) => {
+      if (popupPort) popupPort.postMessage(msg);
+    });
+    
     offscreenPort.onDisconnect.addListener(() => {
       offscreenPort = null;
     });
@@ -24,6 +25,16 @@ chrome.runtime.onConnect.addListener((port) => {
         startAudioCapture();
       } else if (msg.type === 'STOP_CAPTURE') {
         stopAudioCapture();
+      } else if (msg.type === 'GET_STATUS') {
+        // 팝업 연결 시 현재 캡처 상태를 먼저 동기화
+        popupPort?.postMessage({ type: 'CAPTURE_STATUS', capturing: isCapturing });
+        
+        if (offscreenPort) {
+          offscreenPort.postMessage(msg);
+        } else {
+          // 오프스크린이 없는 경우 빈 초기 상태 전송
+          popupPort?.postMessage({ type: 'SYNC_STATUS', data: { filters: [], masterGain: 1.0 } });
+        }
       } else if (offscreenPort) {
         offscreenPort.postMessage(msg);
       }
