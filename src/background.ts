@@ -5,34 +5,42 @@ let popupPort: chrome.runtime.Port | null = null;
 chrome.runtime.onConnect.addListener((port) => {
   if (port.name === 'offscreen-port') {
     offscreenPort = port;
-    
-    // 오프스크린에서 전송된 상태 동기화 메시지를 팝업으로 중계
     offscreenPort.onMessage.addListener((msg) => {
       if (popupPort) popupPort.postMessage(msg);
     });
-    
     offscreenPort.onDisconnect.addListener(() => {
       offscreenPort = null;
     });
   } else if (port.name === 'popup-port') {
     popupPort = port;
+    
     popupPort.onDisconnect.addListener(() => {
       popupPort = null;
     });
     
-    popupPort.onMessage.addListener((msg) => {
+    popupPort.onMessage.addListener(async (msg) => {
       if (msg.type === 'START_CAPTURE') {
         startAudioCapture();
       } else if (msg.type === 'STOP_CAPTURE') {
         stopAudioCapture();
       } else if (msg.type === 'GET_STATUS') {
-        // 팝업 연결 시 현재 캡처 상태를 먼저 동기화
-        popupPort?.postMessage({ type: 'CAPTURE_STATUS', capturing: isCapturing });
+        const contexts = await chrome.runtime.getContexts({ contextTypes: ['OFFSCREEN_DOCUMENT'] });
+        if (contexts.length > 0) {
+          isCapturing = true;
+          if (!offscreenPort) {
+            chrome.runtime.sendMessage({ type: 'PING_OFFSCREEN' });
+            for (let i = 0; i < 10; i++) {
+              if (offscreenPort) break;
+              await new Promise(resolve => setTimeout(resolve, 50));
+            }
+          }
+        } else {
+          isCapturing = false;
+        }
         
         if (offscreenPort) {
           offscreenPort.postMessage(msg);
         } else {
-          // 오프스크린이 없는 경우 빈 초기 상태 전송
           popupPort?.postMessage({ type: 'SYNC_STATUS', data: { filters: [], masterGain: 1.0 } });
         }
       } else if (offscreenPort) {
@@ -67,6 +75,15 @@ async function ensureOffscreenDocument() {
   });
 }
 
+async function closeOffscreenDocument() {
+  const contexts = await chrome.runtime.getContexts({ contextTypes: ['OFFSCREEN_DOCUMENT'] });
+  if (contexts.length > 0) {
+    await chrome.offscreen.closeDocument();
+  }
+  isCapturing = false;
+  offscreenPort = null;
+}
+
 async function startAudioCapture() {
   if (isCapturing) return;
 
@@ -89,21 +106,18 @@ async function startAudioCapture() {
     if (offscreenPort) {
       offscreenPort.postMessage({ type: 'SETUP_MEDIA_STREAM', streamId });
       isCapturing = true;
-      if (popupPort) popupPort.postMessage({ type: 'CAPTURE_STATUS', capturing: true });
     }
   } catch (error) {
     console.error('[Background] 캡처 프로세스 오류:', error);
   }
 }
 
-function stopAudioCapture() {
+async function stopAudioCapture() {
   isCapturing = false;
   if (offscreenPort) {
     offscreenPort.postMessage({ type: 'CLEANUP_MEDIA_STREAM' });
   }
-  if (popupPort) {
-    popupPort.postMessage({ type: 'CAPTURE_STATUS', capturing: false });
-  }
+  await closeOffscreenDocument();
 }
 
 export {};

@@ -1,8 +1,3 @@
-/**
- * Graph-based Audio Equalizer - UI
- * 포트 통신 기반 상태 동기화 및 캔버스 좌표계 스케일 보정 적용
- */
-
 interface EQNode {
   id: number;
   frequency: number;
@@ -45,19 +40,29 @@ class EQVisualizer {
 
   private setupPortListener() {
     this.backgroundPort.onMessage.addListener((msg) => {
-      if (msg.type === 'SYNC_STATUS' && msg.data?.filters) {
-        this.nodes = msg.data.filters.map((f: any, i: number) => ({
-          id: f.nodeId, frequency: f.frequency, Q: f.Q, gain: f.gain, type: f.type,
-          color: this.colorPalette[i % this.colorPalette.length]
-        }));
-        if (this.nodes.length > 0) this.nextNodeId = Math.max(...this.nodes.map(n => n.id)) + 1;
-        this.updateNodeList();
-        this.updateControlPanel();
-        this.drawGraph();
+      if (msg.type === 'SYNC_STATUS' && msg.data) {
+        if (msg.data.filters) {
+          this.nodes = msg.data.filters.map((f: any, i: number) => ({
+            id: f.nodeId, frequency: f.frequency, Q: f.Q, gain: f.gain, type: f.type,
+            color: this.colorPalette[i % this.colorPalette.length]
+          }));
+          this.nextNodeId = this.nodes.length > 0 ? Math.max(...this.nodes.map(n => n.id)) + 1 : 0;
+          this.updateNodeList();
+          this.updateControlPanel();
+          this.drawGraph();
+        }
+        
+        if (msg.data.masterGain !== undefined) {
+          const masterGainInput = document.getElementById('masterGain') as HTMLInputElement;
+          const display = document.getElementById('masterGainValue');
+          if (masterGainInput && display) {
+            const dbValue = 20 * Math.log10(msg.data.masterGain || 1);
+            masterGainInput.value = dbValue.toFixed(1);
+            display.textContent = dbValue.toFixed(1) + ' dB';
+          }
+        }
       } else if (msg.type === 'SYNC_FREQUENCY_DATA' && msg.data) {
         this.frequencyData = new Uint8Array(msg.data);
-      } else if (msg.type === 'CAPTURE_STATUS') {
-        this.updateCaptureUI(msg.capturing);
       }
     });
   }
@@ -363,32 +368,25 @@ class EQVisualizer {
   }
 
   deleteSelectedNode() { if (this.selectedNodeId !== null) this.removeNode(this.selectedNodeId); }
-  reset() { [...this.nodes.map(n => n.id)].forEach(id => this.removeNode(id)); }
-  startCaptureCommand() { this.backgroundPort.postMessage({ type: 'START_CAPTURE' }); }
-  stopCaptureCommand() { this.backgroundPort.postMessage({ type: 'STOP_CAPTURE' }); }
-  sendMasterGain(gain: number) { this.backgroundPort.postMessage({ type: 'SET_MASTER_GAIN', gain }); }
-
-  private updateCaptureUI(capturing: boolean) {
-    const btn = document.getElementById('captureButton') as HTMLButtonElement;
-    const status = document.getElementById('captureStatus') as HTMLElement;
-    if (!btn || !status) return;
-
-    if (capturing) {
-      btn.textContent = '🎤 오디오 캡처 중지';
-      btn.classList.add('active');
-      status.textContent = '캡처 중...';
-      status.classList.add('active');
-    } else {
-      btn.textContent = '🎤 오디오 캡처 시작';
-      btn.classList.remove('active');
-      status.textContent = '대기 중';
-      status.classList.remove('active');
+  
+  reset() { 
+    [...this.nodes.map(n => n.id)].forEach(id => this.removeNode(id));
+    this.sendMasterGain(1.0);
+    const masterGainInput = document.getElementById('masterGain') as HTMLInputElement;
+    const display = document.getElementById('masterGainValue');
+    if (masterGainInput && display) {
+      masterGainInput.value = "0";
+      display.textContent = "0.0 dB";
     }
   }
+  
+  startCaptureCommand() { this.backgroundPort.postMessage({ type: 'START_CAPTURE' }); }
+  sendMasterGain(gain: number) { this.backgroundPort.postMessage({ type: 'SET_MASTER_GAIN', gain }); }
 }
 
 document.addEventListener('DOMContentLoaded', () => {
   const visualizer = new EQVisualizer();
+  
   visualizer.startCaptureCommand();
 
   const masterGainInput = document.getElementById('masterGain') as HTMLInputElement;
@@ -403,17 +401,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
   document.getElementById('deleteButton')?.addEventListener('click', () => visualizer.deleteSelectedNode());
   document.getElementById('resetButton')?.addEventListener('click', () => visualizer.reset());
-  
-  const captureBtn = document.getElementById('captureButton');
-  if (captureBtn) {
-    captureBtn.addEventListener('click', () => {
-      if (captureBtn.classList.contains('active')) {
-        visualizer.stopCaptureCommand();
-      } else {
-        visualizer.startCaptureCommand();
-      }
-    });
-  }
 });
 
 export {};

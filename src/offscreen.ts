@@ -1,8 +1,3 @@
-/**
- * Offscreen Document
- * 포트 통신 기반의 웹 오디오 API 엔진
- */
-
 interface FilterConfig {
   type: BiquadFilterType;
   frequency: number;
@@ -18,16 +13,44 @@ class AudioProcessor {
   private filters: Map<number, BiquadFilterNode> = new Map();
   private filterNodeIds: number[] = [];
   private gainNode: GainNode | null = null;
-  private backgroundPort: chrome.runtime.Port;
+  private backgroundPort: chrome.runtime.Port | null = null;
+  
+  private currentMasterGain: number = 1.0;
 
   constructor() {
     this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-    this.backgroundPort = chrome.runtime.connect({ name: 'offscreen-port' });
-    this.setupPortListener();
+    this.connectToBackground();
     chrome.runtime.sendMessage({ type: 'OFFSCREEN_READY' });
+
+    chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+      if (msg.type === 'PING_OFFSCREEN') {
+        this.connectToBackground();
+        sendResponse({ success: true });
+      }
+    });
+  }
+
+  private connectToBackground() {
+    if (this.backgroundPort) {
+      this.backgroundPort.disconnect();
+    }
+    this.backgroundPort = chrome.runtime.connect({ name: 'offscreen-port' });
+    this.backgroundPort.onDisconnect.addListener(() => {
+      this.backgroundPort = null;
+    });
+    this.setupPortListener();
+  }
+
+  private safePostMessage(msg: any) {
+    try {
+      if (this.backgroundPort) this.backgroundPort.postMessage(msg);
+    } catch (e) {
+      this.backgroundPort = null;
+    }
   }
 
   private setupPortListener() {
+    if (!this.backgroundPort) return;
     this.backgroundPort.onMessage.addListener(async (msg) => {
       switch (msg.type) {
         case 'SETUP_MEDIA_STREAM':
@@ -49,12 +72,12 @@ class AudioProcessor {
           this.setMasterGain(msg.gain);
           break;
         case 'GET_STATUS':
-          this.backgroundPort.postMessage({ type: 'SYNC_STATUS', data: this.getStatus() });
+          this.safePostMessage({ type: 'SYNC_STATUS', data: this.getStatus() });
           break;
         case 'GET_FREQUENCY_DATA':
           const data = this.getFrequencyData();
           if (data) {
-            this.backgroundPort.postMessage({ type: 'SYNC_FREQUENCY_DATA', data: Array.from(data) });
+            this.safePostMessage({ type: 'SYNC_FREQUENCY_DATA', data: Array.from(data) });
           }
           break;
       }
@@ -78,11 +101,17 @@ class AudioProcessor {
 
   private setupAudioChain() {
     if (!this.mediaStreamSource || !this.audioContext) return;
+    
+    // 오디오 신호 분산(Fan-out) 방지
+    this.mediaStreamSource.disconnect();
+
     if (this.gainNode) this.gainNode.disconnect();
     if (this.analyserNode) this.analyserNode.disconnect();
     for (const filter of this.filters.values()) filter.disconnect();
 
     this.gainNode = this.audioContext.createGain();
+    this.gainNode.gain.value = this.currentMasterGain;
+    
     this.analyserNode = this.audioContext.createAnalyser();
     this.analyserNode.fftSize = 2048;
 
@@ -138,11 +167,13 @@ class AudioProcessor {
   }
 
   private setMasterGain(gain: number) {
+    this.currentMasterGain = gain;
     if (this.gainNode) this.gainNode.gain.value = gain;
   }
 
   private getStatus() {
     return {
+      masterGain: this.currentMasterGain,
       filters: this.filterNodeIds.map(id => {
         const f = this.filters.get(id)!;
         return { nodeId: id, type: f.type, frequency: f.frequency.value, Q: f.Q.value, gain: f.gain.value };
