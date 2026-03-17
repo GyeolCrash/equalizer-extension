@@ -13,7 +13,6 @@ class EQVisualizer {
   private nodes: EQNode[] = [];
   private selectedNodeId: number | null = null;
   private draggingNode: EQNode | null = null;
-  private nextNodeId = 0;
   private frequencyData: Uint8Array | null = null;
   private isVisualizationRunning = false;
   private uiAudioContext: AudioContext;
@@ -42,11 +41,11 @@ class EQVisualizer {
     this.backgroundPort.onMessage.addListener((msg) => {
       if (msg.type === 'SYNC_STATUS' && msg.data) {
         if (msg.data.filters) {
-          this.nodes = msg.data.filters.map((f: any, i: number) => ({
+          this.nodes = msg.data.filters.map((f: any) => ({
             id: f.nodeId, frequency: f.frequency, Q: f.Q, gain: f.gain, type: f.type,
-            color: this.colorPalette[i % this.colorPalette.length]
+            color: this.colorPalette[f.nodeId % this.colorPalette.length]
           }));
-          this.nextNodeId = this.nodes.length > 0 ? Math.max(...this.nodes.map(n => n.id)) + 1 : 0;
+          this.nodes.sort((a, b) => a.id - b.id);
           this.updateNodeList();
           this.updateControlPanel();
           this.drawGraph();
@@ -139,12 +138,20 @@ class EQVisualizer {
   }
 
   addNode(x: number, y: number) {
-    const id = this.nextNodeId++;
+    if (this.nodes.length >= 5) return;
+
+    let id = 0;
+    while (this.nodes.some(n => n.id === id)) {
+      id++;
+    }
+
     const node: EQNode = {
       id, frequency: this.xToFrequency(x), Q: 1.0, gain: this.yToGain(y), type: 'peaking',
-      color: this.colorPalette[this.nodes.length % this.colorPalette.length]
+      color: this.colorPalette[id % this.colorPalette.length]
     };
+    
     this.nodes.push(node);
+    this.nodes.sort((a, b) => a.id - b.id);
     this.selectNode(id);
     this.backgroundPort.postMessage({ type: 'ADD_FILTER', nodeId: id, frequency: Math.round(node.frequency) });
     this.sendFilterUpdate(id);
@@ -173,7 +180,7 @@ class EQVisualizer {
   private updateControlPanel() {
     const panel = document.getElementById('controlPanel') as HTMLDivElement;
     if (!panel || this.selectedNodeId === null) {
-      if (panel) panel.innerHTML = '<p>노드를 선택하세요</p>';
+      if (panel) panel.innerHTML = '<p class="placeholder-text">노드를 선택하세요</p>';
       return;
     }
 
@@ -181,18 +188,32 @@ class EQVisualizer {
     if (!node) return;
 
     panel.innerHTML = `
-      <div class="info-group"><label>Node ${node.id + 1}</label></div>
-      <div class="info-group"><label>Frequency:</label><input type="number" id="freqInput" value="${Math.round(node.frequency)}" min="20" max="20000" /><span>Hz</span></div>
-      <div class="info-group"><label>Q:</label><input type="number" id="qInput" value="${node.Q.toFixed(1)}" min="0.1" max="10" step="0.1" /></div>
-      <div class="info-group"><label>Gain:</label><input type="number" id="gainInput" value="${node.gain.toFixed(1)}" min="-12" max="12" step="0.1" /><span>dB</span></div>
-      <div class="info-group"><label>Filter:</label>
+      <div class="node-title">Node ${node.id + 1}</div>
+      <div class="info-group">
+        <label>Freq</label>
+        <input type="number" id="freqInput" value="${Math.round(node.frequency)}" min="20" max="20000" />
+        <span>Hz</span>
+      </div>
+      <div class="info-group">
+        <label>Gain</label>
+        <input type="number" id="gainInput" value="${node.gain.toFixed(1)}" min="-12" max="12" step="0.1" />
+        <span>dB</span>
+      </div>
+      <div class="info-group">
+        <label>Q</label>
+        <input type="number" id="qInput" value="${node.Q.toFixed(1)}" min="0.1" max="10" step="0.1" />
+        <span></span>
+      </div>
+      <div class="info-group">
+        <label>Filter</label>
         <select id="filterSelect">
           <option value="peaking" ${node.type === 'peaking' ? 'selected' : ''}>Peaking</option>
-          <option value="lowshelf" ${node.type === 'lowshelf' ? 'selected' : ''}>Low Shelf</option>
-          <option value="highshelf" ${node.type === 'highshelf' ? 'selected' : ''}>High Shelf</option>
-          <option value="lowpass" ${node.type === 'lowpass' ? 'selected' : ''}>Low Pass</option>
-          <option value="highpass" ${node.type === 'highpass' ? 'selected' : ''}>High Pass</option>
+          <option value="lowshelf" ${node.type === 'lowshelf' ? 'selected' : ''}>LowShelf</option>
+          <option value="highshelf" ${node.type === 'highshelf' ? 'selected' : ''}>HiShelf</option>
+          <option value="lowpass" ${node.type === 'lowpass' ? 'selected' : ''}>LowPass</option>
+          <option value="highpass" ${node.type === 'highpass' ? 'selected' : ''}>HiPass</option>
         </select>
+        <span></span>
       </div>
     `;
 
@@ -206,10 +227,10 @@ class EQVisualizer {
     const listContainer = document.getElementById('nodeList') as HTMLDivElement;
     if (!listContainer) return;
     listContainer.innerHTML = '';
-    this.nodes.forEach((node, index) => {
+    this.nodes.forEach((node) => {
       const item = document.createElement('div');
       item.className = `node-item ${this.selectedNodeId === node.id ? 'selected' : ''}`;
-      item.innerHTML = `<span>${index + 1}</span>`;
+      item.innerHTML = `<span>${node.id + 1}</span>`;
       item.addEventListener('click', () => this.selectNode(node.id));
       listContainer.appendChild(item);
     });
@@ -260,10 +281,8 @@ class EQVisualizer {
 
   private drawGraph() {
     const { ctx, canvas, graphWidth, graphHeight, padding } = this;
-    ctx.fillStyle = '#1a1a1a';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.fillStyle = '#0a0a0a';
-    ctx.fillRect(padding, padding, graphWidth - 2 * padding, graphHeight - 2 * padding);
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     this.drawFrequencySpectrum();
     this.drawGridLines();
@@ -276,7 +295,7 @@ class EQVisualizer {
     if (!this.frequencyData) return;
     const { ctx, padding, graphWidth, graphHeight } = this;
     const barWidth = (graphWidth - 2 * padding) / this.frequencyData.length;
-    ctx.fillStyle = 'rgba(100, 200, 255, 0.1)';
+    ctx.fillStyle = 'rgba(100, 200, 255, 0.15)';
     for (let i = 0; i < this.frequencyData.length; i++) {
       const barHeight = (this.frequencyData[i] / 255) * (graphHeight - 2 * padding);
       ctx.fillRect(padding + i * barWidth, graphHeight - padding - barHeight, barWidth, barHeight);
@@ -285,7 +304,7 @@ class EQVisualizer {
 
   private drawGridLines() {
     const { ctx, padding, graphWidth, graphHeight } = this;
-    ctx.strokeStyle = '#333333'; ctx.lineWidth = 1;
+    ctx.strokeStyle = '#2a2a2a'; ctx.lineWidth = 1;
     [20, 100, 500, 1000, 5000, 10000].forEach((freq) => {
       const x = this.frequencyToX(freq);
       ctx.beginPath(); ctx.moveTo(x, padding); ctx.lineTo(x, graphHeight - padding); ctx.stroke();
@@ -294,7 +313,7 @@ class EQVisualizer {
       const y = this.gainToY(gain);
       ctx.beginPath(); ctx.moveTo(padding, y); ctx.lineTo(graphWidth - padding, y); ctx.stroke();
     });
-    ctx.strokeStyle = '#555555'; ctx.lineWidth = 2;
+    ctx.strokeStyle = '#444444'; ctx.lineWidth = 2;
     const centerY = this.gainToY(0);
     ctx.beginPath(); ctx.moveTo(padding, centerY); ctx.lineTo(graphWidth - padding, centerY); ctx.stroke();
   }
@@ -351,7 +370,7 @@ class EQVisualizer {
 
   private drawAxisLabels() {
     const { ctx, padding, graphHeight } = this;
-    ctx.fillStyle = '#888888'; ctx.font = '12px Arial'; ctx.textAlign = 'center';
+    ctx.fillStyle = '#777777'; ctx.font = '11px Arial'; ctx.textAlign = 'center';
     [{ freq: 20, label: '20' }, { freq: 100, label: '100' }, { freq: 1000, label: '1k' }, { freq: 10000, label: '10k' }]
       .forEach(({ freq, label }) => { ctx.fillText(label + ' Hz', this.frequencyToX(freq), graphHeight - 5); });
     ctx.textAlign = 'right';
