@@ -9,7 +9,7 @@
 <body>
     <div class="container">
         <header>
-            <h2>Graph-based Audio Equalizer</h2>
+            <h1>Graph-based Audio Equalizer</h1>
         </header>
 
         <div class="graph-section">
@@ -24,20 +24,19 @@
 
         <div class="controls-grid">
             <div class="node-list-section">
-                <h3>노드 목록</h3>
+                <div class="section-title">노드 목록</div>
                 <div id="nodeList" class="node-list"></div>
+                <div class="node-actions">
+                    <button id="deleteButton" class="btn btn-danger">삭제</button>
+                    <button id="resetButton" class="btn btn-secondary">초기화</button>
+                </div>
             </div>
 
             <div class="parameter-section">
                 <div id="controlPanel" class="control-panel">
-                    <p>노드를 선택하세요</p>
+                    <p class="placeholder-text">노드를 선택하세요</p>
                 </div>
             </div>
-        </div>
-
-        <div class="actions">
-            <button id="deleteButton" class="btn btn-danger">선택된 필터 삭제</button>
-            <button id="resetButton" class="btn btn-secondary">초기화</button>
         </div>
     </div>
 
