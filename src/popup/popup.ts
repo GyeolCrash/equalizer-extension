@@ -7,6 +7,74 @@ interface EQNode {
   color: string;
 }
 
+class UIManager {
+  constructor() {
+    this.setupTabs();
+    this.setupTheme();
+  }
+
+  private setupTabs() {
+    const tabBtns = document.querySelectorAll('.tab-btn');
+    const tabContents = document.querySelectorAll('.tab-content');
+
+    tabBtns.forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const targetBtn = e.target as HTMLButtonElement;
+        const targetId = targetBtn.dataset.target;
+
+        tabBtns.forEach(b => b.classList.remove('active'));
+        tabContents.forEach(c => c.classList.remove('active'));
+
+        targetBtn.classList.add('active');
+        document.getElementById(targetId!)?.classList.add('active');
+      });
+    });
+  }
+
+  private setupTheme() {
+    const themeBtns = document.querySelectorAll('#themeButtons .btn-toggle');
+    
+    const applyTheme = (theme: string) => {
+      if (theme === 'system') {
+        const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        document.documentElement.setAttribute('data-theme', prefersDark ? 'dark' : 'light');
+      } else {
+        document.documentElement.setAttribute('data-theme', theme);
+      }
+      document.dispatchEvent(new Event('themeChanged'));
+
+      themeBtns.forEach(btn => {
+        if ((btn as HTMLButtonElement).dataset.themeVal === theme) {
+          btn.classList.add('active');
+        } else {
+          btn.classList.remove('active');
+        }
+      });
+    };
+
+    chrome.storage.local.get(['theme'], (result) => {
+      const savedTheme = (result.theme as string) || 'system';
+      applyTheme(savedTheme);
+    });
+
+    themeBtns.forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const theme = (e.currentTarget as HTMLButtonElement).dataset.themeVal!;
+        chrome.storage.local.set({ theme });
+        applyTheme(theme);
+      });
+    });
+
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+      chrome.storage.local.get(['theme'], (result) => {
+        if (!result.theme || result.theme === 'system') {
+          applyTheme('system');
+        }
+      });
+    });
+  }
+}
+
 class EQVisualizer {
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
@@ -130,6 +198,10 @@ class EQVisualizer {
         this.removeNode(this.selectedNodeId);
       }
     });
+
+    document.addEventListener('themeChanged', () => {
+      this.drawGraph();
+    });
   }
 
   private isInGraphArea(x: number, y: number): boolean {
@@ -180,7 +252,7 @@ class EQVisualizer {
   private updateControlPanel() {
     const panel = document.getElementById('controlPanel') as HTMLDivElement;
     if (!panel || this.selectedNodeId === null) {
-      if (panel) panel.innerHTML = '<p class="placeholder-text">노드를 선택하세요</p>';
+      if (panel) panel.innerHTML = '<p class="placeholder-text">Select a node</p>';
       return;
     }
 
@@ -281,14 +353,16 @@ class EQVisualizer {
 
   private drawGraph() {
     const { ctx, canvas, graphWidth, graphHeight, padding } = this;
-    ctx.fillStyle = '#0a0a0a';
+    const styles = getComputedStyle(document.documentElement);
+    
+    ctx.fillStyle = styles.getPropertyValue('--canvas-bg').trim() || '#0a0a0a';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     this.drawFrequencySpectrum();
-    this.drawGridLines();
+    this.drawGridLines(styles);
     this.drawFilterCurve();
     this.drawNodes();
-    this.drawAxisLabels();
+    this.drawAxisLabels(styles);
   }
 
   private drawFrequencySpectrum() {
@@ -302,9 +376,10 @@ class EQVisualizer {
     }
   }
 
-  private drawGridLines() {
+  private drawGridLines(styles: CSSStyleDeclaration) {
     const { ctx, padding, graphWidth, graphHeight } = this;
-    ctx.strokeStyle = '#2a2a2a'; ctx.lineWidth = 1;
+    ctx.strokeStyle = styles.getPropertyValue('--grid-line-1').trim() || '#2a2a2a'; 
+    ctx.lineWidth = 1;
     [20, 100, 500, 1000, 5000, 10000].forEach((freq) => {
       const x = this.frequencyToX(freq);
       ctx.beginPath(); ctx.moveTo(x, padding); ctx.lineTo(x, graphHeight - padding); ctx.stroke();
@@ -313,7 +388,9 @@ class EQVisualizer {
       const y = this.gainToY(gain);
       ctx.beginPath(); ctx.moveTo(padding, y); ctx.lineTo(graphWidth - padding, y); ctx.stroke();
     });
-    ctx.strokeStyle = '#444444'; ctx.lineWidth = 2;
+    
+    ctx.strokeStyle = styles.getPropertyValue('--grid-line-2').trim() || '#444444'; 
+    ctx.lineWidth = 2;
     const centerY = this.gainToY(0);
     ctx.beginPath(); ctx.moveTo(padding, centerY); ctx.lineTo(graphWidth - padding, centerY); ctx.stroke();
   }
@@ -341,7 +418,9 @@ class EQVisualizer {
       for (let i = 0; i < numPoints; i++) totalMag[i] *= magResponse[i];
     }
 
-    ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2; ctx.beginPath();
+    const styles = getComputedStyle(document.documentElement);
+    ctx.strokeStyle = styles.getPropertyValue('--text-main').trim() || '#ffffff';
+    ctx.lineWidth = 2; ctx.beginPath();
     for (let i = 0; i < numPoints; i++) {
       const x = padding + i;
       const gainDb = 20 * Math.log10(totalMag[i]);
@@ -368,9 +447,10 @@ class EQVisualizer {
     }
   }
 
-  private drawAxisLabels() {
+  private drawAxisLabels(styles: CSSStyleDeclaration) {
     const { ctx, padding, graphHeight } = this;
-    ctx.fillStyle = '#777777'; ctx.font = '11px Arial'; ctx.textAlign = 'center';
+    ctx.fillStyle = styles.getPropertyValue('--text-dark').trim() || '#777777'; 
+    ctx.font = '11px Arial'; ctx.textAlign = 'center';
     [{ freq: 20, label: '20' }, { freq: 100, label: '100' }, { freq: 1000, label: '1k' }, { freq: 10000, label: '10k' }]
       .forEach(({ freq, label }) => { ctx.fillText(label + ' Hz', this.frequencyToX(freq), graphHeight - 5); });
     ctx.textAlign = 'right';
@@ -404,6 +484,7 @@ class EQVisualizer {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+  new UIManager();
   const visualizer = new EQVisualizer();
   
   visualizer.startCaptureCommand();
@@ -420,6 +501,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
   document.getElementById('deleteButton')?.addEventListener('click', () => visualizer.deleteSelectedNode());
   document.getElementById('resetButton')?.addEventListener('click', () => visualizer.reset());
+
+  document.getElementById('resetBtn')?.addEventListener('click', () => {
+    chrome.runtime.reload();
+  });
 });
 
 export {};
