@@ -12,9 +12,9 @@
 | **Vite**    | 7.3.1           | Multiple Entry Point |
 
 
-### 개발 언어 및 타입 시스템
+### Programming Languages and Type Systems
 
-| 도구 | 버전 | 용도 |
+| Tools | Version | Purpose |
 |-------------------|--------|-------------------------------------------------|
 | **TypeScript**    | 5.9.3  | Static Type Validation, Runtime Error Detection |
 | **@types/chrome** | 0.1.37 | Chrome Extension API v3                         |
