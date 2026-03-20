@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Graph-based Audio Equalizer",
+  "name": "Audio Manipulator: EQ, Compressor, Pitch Shifter",
   "version": "1.0.0",
-  "description": "동적 그래프 기반 이퀄라이저 - Web Audio API를 통한 자유로운 주파수 제어 및 실시간 시각화",
+  "description": "A Chrome extension for advanced audio manipulation, including a graph-based equalizer, compressor, and pitch shifter, with real-time visualization and user-friendly controls.",
   "permissions": [
     "tabCapture",
     "activeTab",
@@ -18,7 +18,7 @@
   },
   "action": {
     "default_popup": "src/popup/popup.html",
-    "default_title": "Parametric Equalizer"
+    "default_title": "Audio Manipulator"
   },
   "icons": {
     "16": "/icons/icon-16.png",

@@ -1,7 +1,7 @@
 {
-  "name": "equalizer-extension",
+  "name": "audio-manipulator-extension",
   "version": "1.0.0",
-  "description": "파라메트릭 이퀄라이저 Chrome 확장 프로그램",
+  "description": "A Chrome extension for advanced audio manipulation, including a graph-based equalizer, compressor, and pitch shifter, with real-time visualization and user-friendly controls.",
   "type": "module",
   "scripts": {
     "dev": "vite",
