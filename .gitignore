@@ -4,7 +4,7 @@ package-lock.json
 npm-debug.log
 
 # Build output
-dist/
+client/dist/
 build/
 
 # IDE

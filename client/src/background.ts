@@ -20,11 +20,11 @@ chrome.runtime.onConnect.addListener((port) => {
     });
   } else if (port.name === 'popup-port') {
     uiPorts.add(port);
-    
+
     port.onDisconnect.addListener(() => {
       uiPorts.delete(port);
     });
-    
+
     port.onMessage.addListener(async (msg) => {
       if (msg.type === 'START_CAPTURE') {
         startAudioCapture();
@@ -44,7 +44,7 @@ chrome.runtime.onConnect.addListener((port) => {
         } else {
           isCapturing = false;
         }
-        
+
         if (offscreenPort) {
           offscreenPort.postMessage(msg);
         } else {
@@ -131,4 +131,4 @@ async function stopAudioCapture() {
   await closeOffscreenDocument();
 }
 
-export {};
+export { };
