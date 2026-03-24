@@ -31,3 +31,31 @@ logs/
 .DS_Store
 .AppleDouble
 .LSOverride
+
+# Agents
+.agents
+
+# Server
+server/node_modules/
+server/dist/
+server/.env
+server/*.log
+server/*.txt
+
+# Firebase / Google Cloud
+.firebase/
+*-key.json
+service-account*.json
+firebase-debug.log*
+firestore-debug.log*
+
+# Vite / Build
+out/
+*.tsbuildinfo
+vite.config.ts.timestamp-*
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/

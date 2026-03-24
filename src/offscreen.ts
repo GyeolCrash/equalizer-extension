@@ -91,6 +91,14 @@ class AudioProcessor {
         audio: { mandatory: { chromeMediaSource: 'tab', chromeMediaSourceId: streamId } } as any,
         video: false
       });
+      
+      const audioTrack = this.mediaStream.getAudioTracks()[0];
+      if (audioTrack) {
+        audioTrack.addEventListener('ended', () => {
+          this.safePostMessage({ type: 'STREAM_ENDED' });
+        });
+      }
+
       this.mediaStreamSource = this.audioContext!.createMediaStreamSource(this.mediaStream);
       if (this.audioContext!.state === 'suspended') await this.audioContext!.resume();
       this.setupAudioChain();
@@ -102,7 +110,6 @@ class AudioProcessor {
   private setupAudioChain() {
     if (!this.mediaStreamSource || !this.audioContext) return;
     
-    // 오디오 신호 분산(Fan-out) 방지
     this.mediaStreamSource.disconnect();
 
     if (this.gainNode) this.gainNode.disconnect();

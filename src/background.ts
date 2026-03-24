@@ -1,24 +1,31 @@
 let isCapturing = false;
+let isCaptureInitializing = false;
 let offscreenPort: chrome.runtime.Port | null = null;
-let popupPort: chrome.runtime.Port | null = null;
+const uiPorts: Set<chrome.runtime.Port> = new Set();
 
 chrome.runtime.onConnect.addListener((port) => {
   if (port.name === 'offscreen-port') {
     offscreenPort = port;
     offscreenPort.onMessage.addListener((msg) => {
-      if (popupPort) popupPort.postMessage(msg);
+      if (msg.type === 'STREAM_ENDED') {
+        stopAudioCapture();
+      } else {
+        for (const uiPort of uiPorts) {
+          uiPort.postMessage(msg);
+        }
+      }
     });
     offscreenPort.onDisconnect.addListener(() => {
       offscreenPort = null;
     });
   } else if (port.name === 'popup-port') {
-    popupPort = port;
+    uiPorts.add(port);
     
-    popupPort.onDisconnect.addListener(() => {
-      popupPort = null;
+    port.onDisconnect.addListener(() => {
+      uiPorts.delete(port);
     });
     
-    popupPort.onMessage.addListener(async (msg) => {
+    port.onMessage.addListener(async (msg) => {
       if (msg.type === 'START_CAPTURE') {
         startAudioCapture();
       } else if (msg.type === 'STOP_CAPTURE') {
@@ -41,7 +48,7 @@ chrome.runtime.onConnect.addListener((port) => {
         if (offscreenPort) {
           offscreenPort.postMessage(msg);
         } else {
-          popupPort?.postMessage({ type: 'SYNC_STATUS', data: { filters: [], masterGain: 1.0 } });
+          port.postMessage({ type: 'SYNC_STATUS', data: { filters: [], masterGain: 1.0 } });
         }
       } else if (offscreenPort) {
         offscreenPort.postMessage(msg);
@@ -64,7 +71,7 @@ async function ensureOffscreenDocument() {
     chrome.runtime.onMessage.addListener(readyListener);
 
     chrome.offscreen.createDocument({
-      url: 'src/offscreen.html',
+      url: chrome.runtime.getURL('src/offscreen.html'),
       reasons: ['USER_MEDIA', 'AUDIO_PLAYBACK'],
       justification: '탭 오디오 캡처 및 이퀄라이저 파이프라인 유지'
     }).catch(err => {
@@ -85,7 +92,8 @@ async function closeOffscreenDocument() {
 }
 
 async function startAudioCapture() {
-  if (isCapturing) return;
+  if (isCapturing || isCaptureInitializing) return;
+  isCaptureInitializing = true;
 
   try {
     const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -109,11 +117,14 @@ async function startAudioCapture() {
     }
   } catch (error) {
     console.error('[Background] 캡처 프로세스 오류:', error);
+  } finally {
+    isCaptureInitializing = false;
   }
 }
 
 async function stopAudioCapture() {
   isCapturing = false;
+  isCaptureInitializing = false;
   if (offscreenPort) {
     offscreenPort.postMessage({ type: 'CLEANUP_MEDIA_STREAM' });
   }

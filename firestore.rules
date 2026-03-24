@@ -1,0 +1,19 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Users collection rules
+    // Rule 93: Access to the 'users' collection must be restricted to the document owner.
+    match /users/{userId} {
+      // Rule 60: Use the Google User ID (sub claim from ID token) as the Primary Document ID.
+      // request.auth refers to the JWT token validated by Firebase.
+      // Since the frontend uses Firebase Auth (or manual verification for Cloud Run), 
+      // the document owner must be the authenticated user.
+      allow read: if request.auth != null && request.auth.uid == userId;
+      
+      // Mutations are restricted. Server-side (Cloud Run) uses firebase-admin SDK 
+      // with a service account which bypasses these security rules.
+      allow write: if request.auth != null && request.auth.uid == userId;
+    }
+  }
+}
