@@ -8,7 +8,7 @@ const webhookRouter = express.Router();
 webhookRouter.post('/payment', (req: Request, res: Response) => {
   logger.info({ webhook: 'payment', body: req.body }, 'Payment Webhook Received');
   
-  // todo
+  // todo: Implement cryptographic signature validation for incoming MoR Webhook data
   return res.status(200).send('OK');
 });
 

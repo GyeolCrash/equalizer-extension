@@ -8,9 +8,15 @@ interface EQNode {
 }
 
 class UIManager {
+  private pendingTheme: string = 'system';
+  private pendingViewMode: string = 'popup';
+  private currentViewMode: string = 'popup';
+
   constructor() {
     this.setupTabs();
     this.setupTheme();
+    this.setupViewMode();
+    this.setupApplyButton();
   }
 
   private setupTabs() {
@@ -33,44 +39,128 @@ class UIManager {
 
   private setupTheme() {
     const themeBtns = document.querySelectorAll('#themeButtons .btn-toggle');
-    
-    const applyTheme = (theme: string) => {
-      if (theme === 'system') {
-        const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-        document.documentElement.setAttribute('data-theme', prefersDark ? 'dark' : 'light');
-      } else {
-        document.documentElement.setAttribute('data-theme', theme);
-      }
-      document.dispatchEvent(new Event('themeChanged'));
-
-      themeBtns.forEach(btn => {
-        if ((btn as HTMLButtonElement).dataset.themeVal === theme) {
-          btn.classList.add('active');
-        } else {
-          btn.classList.remove('active');
-        }
-      });
-    };
 
     chrome.storage.local.get(['theme'], (result) => {
-      const savedTheme = (result.theme as string) || 'system';
-      applyTheme(savedTheme);
+      this.pendingTheme = (result.theme as string) || 'system';
+      this.applyThemeLogic(this.pendingTheme);
+      this.updateThemeButtons();
     });
 
     themeBtns.forEach(btn => {
       btn.addEventListener('click', (e) => {
-        const theme = (e.currentTarget as HTMLButtonElement).dataset.themeVal!;
-        chrome.storage.local.set({ theme });
-        applyTheme(theme);
+        this.pendingTheme = (e.currentTarget as HTMLButtonElement).dataset.themeVal!;
+        this.updateThemeButtons();
       });
     });
 
     window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
       chrome.storage.local.get(['theme'], (result) => {
         if (!result.theme || result.theme === 'system') {
-          applyTheme('system');
+          this.pendingTheme = 'system';
+          this.applyThemeLogic('system');
         }
       });
+    });
+  }
+
+  private updateThemeButtons() {
+    const themeBtns = document.querySelectorAll('#themeButtons .btn-toggle');
+    themeBtns.forEach(btn => {
+      if ((btn as HTMLButtonElement).dataset.themeVal === this.pendingTheme) {
+        btn.classList.add('active');
+      } else {
+        btn.classList.remove('active');
+      }
+    });
+  }
+
+  private applyThemeLogic(theme: string) {
+    if (theme === 'system') {
+      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      document.documentElement.setAttribute('data-theme', prefersDark ? 'dark' : 'light');
+    } else {
+      document.documentElement.setAttribute('data-theme', theme);
+    }
+    document.dispatchEvent(new Event('themeChanged'));
+  }
+
+  private setupViewMode() {
+    const viewModeBtns = document.querySelectorAll('#viewModeButtons .btn-toggle');
+
+    chrome.storage.local.get(['viewMode'], (result) => {
+      this.currentViewMode = (result.viewMode as string) || 'popup';
+      this.pendingViewMode = this.currentViewMode;
+      this.updateViewModeButtons();
+    });
+
+    viewModeBtns.forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        this.pendingViewMode = (e.currentTarget as HTMLButtonElement).dataset.modeVal!;
+        this.updateViewModeButtons();
+      });
+    });
+  }
+
+  private updateViewModeButtons() {
+    const viewModeBtns = document.querySelectorAll('#viewModeButtons .btn-toggle');
+    viewModeBtns.forEach(btn => {
+      if ((btn as HTMLButtonElement).dataset.modeVal === this.pendingViewMode) {
+        btn.classList.add('active');
+      } else {
+        btn.classList.remove('active');
+      }
+    });
+  }
+
+  private setupApplyButton() {
+    const applyBtn = document.getElementById('applySettingsBtn');
+    if (!applyBtn) return;
+
+    applyBtn.addEventListener('click', () => {
+      // 1. Theme application
+      chrome.storage.local.set({ theme: this.pendingTheme });
+      this.applyThemeLogic(this.pendingTheme);
+
+      // 2. View Mode application
+      // TODO: Validate Pro Plan subscription here
+      const modeChanged = this.pendingViewMode !== this.currentViewMode;
+      this.currentViewMode = this.pendingViewMode;
+      chrome.storage.local.set({ viewMode: this.pendingViewMode });
+
+      if (this.pendingViewMode === 'sidePanel') {
+        if ((chrome as any).sidePanel && (chrome as any).sidePanel.setPanelBehavior) {
+          (chrome as any).sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
+        }
+      } else {
+        if ((chrome as any).sidePanel && (chrome as any).sidePanel.setPanelBehavior) {
+          (chrome as any).sidePanel.setPanelBehavior({ openPanelOnActionClick: false }).catch(() => {});
+        }
+      }
+
+      if (modeChanged) {
+        if (this.pendingViewMode === 'sidePanel') {
+          chrome.windows.getCurrent({ populate: false }, (win) => {
+            if (win.id !== undefined && (chrome as any).sidePanel) {
+              (chrome as any).sidePanel.open({ windowId: win.id }).then(() => {
+                 window.close();
+              }).catch(() => { window.close(); });
+            }
+          });
+        } else if (this.pendingViewMode === 'newTab') {
+          chrome.tabs.create({ url: chrome.runtime.getURL('src/popup/popup.html') }).then(() => {
+              window.close();
+          });
+        } else {
+          // Changed to Popup mode, close current window
+          chrome.tabs.getCurrent((tab) => {
+              if (tab && tab.id) {
+                  chrome.tabs.remove(tab.id);
+              } else {
+                 window.close();
+              }
+          });
+        }
+      }
     });
   }
 }
@@ -164,7 +254,7 @@ class EQVisualizer {
     this.canvas.addEventListener('dblclick', (e) => {
       const { x, y } = this.getCanvasCoordinates(e);
       if (!this.getNodeAtPosition(x, y) && this.isInGraphArea(x, y)) {
-        if (this.nodes.length < 5) this.addNode(x, y);
+        this.addNode(x, y);
       }
     });
 
@@ -210,7 +300,9 @@ class EQVisualizer {
   }
 
   addNode(x: number, y: number) {
-    if (this.nodes.length >= 5) return;
+    // TODO: Validate Pro Plan subscription here. For Free Plan, max is 5.
+    const maxNodes = 20; // Cap at 20 for system stability
+    if (this.nodes.length >= maxNodes) return;
 
     let id = 0;
     while (this.nodes.some(n => n.id === id)) {

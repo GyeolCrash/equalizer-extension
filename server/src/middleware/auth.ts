@@ -2,9 +2,11 @@ import { Request, Response, NextFunction } from 'express';
 import { OAuth2Client } from 'google-auth-library';
 import jwt from 'jsonwebtoken';
 import logger from '../logger.js';
+import config from '../config/env.js';
+
 const client = new OAuth2Client();
 
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secure-local-secret';
+const JWT_SECRET = config.jwtSecret;
 
 declare global {
   namespace Express {
@@ -25,7 +27,7 @@ export const verifyGoogleToken = async (idToken: string) => {
   try {
     const ticket = await client.verifyIdToken({
       idToken,
-      audience: process.env.GOOGLE_CLIENT_ID,
+      audience: config.googleClientId,
     });
     const payload = ticket.getPayload();
     if (!payload || !payload.sub || !payload.email) {

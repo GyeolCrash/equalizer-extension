@@ -1,11 +1,14 @@
 import { Request, Response } from 'express';
 import { AuthService } from '../services/auth.service.js';
 import { UserDAO } from '../dao/user.dao.js';
+import { db } from '../config/firebase.config.js'; // Ensure app is initialized
+import { getAuth } from 'firebase-admin/auth';
 import jwt from 'jsonwebtoken';
 import pino from 'pino';
+import config from '../config/env.js';
 
 const logger = pino();
-const JWT_SECRET = process.env.JWT_SECRET || 'fallback-secret-for-development-only';
+const JWT_SECRET = config.jwtSecret;
 
 export class AuthController {
   
@@ -23,7 +26,7 @@ export class AuthController {
 
       // Step 2.1: Verify Google ID Token
       const payload = await AuthService.verifyGoogleToken(idToken);
-      const googleUserId = payload.sub; // Extracts the 'sub' claim as unique identifier
+      const googleUserId = payload.sub!; // Extracts the 'sub' claim as unique identifier
 
       // Step 2.2: Check Firestore DAO for existing user
       let user = await UserDAO.getUserById(googleUserId);
@@ -36,7 +39,13 @@ export class AuthController {
         });
       }
 
-      // Step 2.4: Generate custom signed JWT containing { uid, plan }
+      // Step 2.4: Generate Firebase Custom Token
+      const auth = getAuth();
+      const firebaseCustomToken = await auth.createCustomToken(googleUserId, {
+        plan: user.plan_type
+      });
+
+      // Step 2.5: Generate generic signed JWT for Express middleware
       const customToken = jwt.sign(
         { 
           uid: googleUserId, 
@@ -45,13 +54,14 @@ export class AuthController {
         JWT_SECRET, 
         { 
           expiresIn: '7d', // Token valid for 7 days
-          audience: process.env.GOOGLE_CLIENT_ID 
+          audience: config.googleClientId 
         }
       );
 
-      // Step 2.5: Return the generated custom JWT back to the client application
+      // Return both tokens back to the client application
       return res.status(200).json({ 
         token: customToken,
+        firebaseCustomToken,
         user: {
           id: user.id,
           email: user.email,

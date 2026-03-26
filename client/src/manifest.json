@@ -7,11 +7,15 @@
     "tabCapture",
     "activeTab",
     "offscreen",
-    "storage"
+    "storage",
+    "sidePanel"
   ],
   "host_permissions": [
     "<all_urls>"
   ],
+  "side_panel": {
+    "default_path": "src/popup/popup.html"
+  },
   "background": {
     "service_worker": "background.js",
     "type": "module"

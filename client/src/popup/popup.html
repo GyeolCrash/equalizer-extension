@@ -60,8 +60,19 @@
                     </div>
                 </div>
                 <div class="settings-group" style="margin-top: 8px;">
+                    <label>View Mode</label>
+                    <div class="button-group" id="viewModeButtons">
+                        <button class="btn-toggle active" data-mode-val="popup">Popup</button>
+                        <button class="btn-toggle" data-mode-val="sidePanel">Side Panel</button>
+                        <button class="btn-toggle" data-mode-val="newTab">New Tab</button>
+                    </div>
+                </div>
+                <div class="settings-group" style="margin-top: 8px;">
                     <label>Troubleshoot</label>
                     <button id="resetBtn" class="btn btn-danger" style="flex: 0 0 auto; padding: 4px 16px;">Reset</button>
+                </div>
+                <div style="display: flex; justify-content: flex-end; margin-top: 16px;">
+                    <button id="applySettingsBtn" class="btn active" style="padding: 6px 20px; background-color: #2c4c2c; color: white;">Apply</button>
                 </div>
             </div>
         </div>

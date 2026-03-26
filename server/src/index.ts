@@ -2,16 +2,20 @@ import express, { Express, Request, Response } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import logger from './logger.js';
+import config from './config/env.js';
 import userRouter from './routes/user.js';
 import authRouter from './routes/auth.js';
 import webhookRouter from './routes/webhooks.js';
 
 const app: Express = express();
-const port = process.env.PORT || 8080;
+const port = config.port;
 
 // Step 1: Middleware
 app.use(helmet());
-app.use(cors());
+app.use(cors({
+  origin: `chrome-extension://${config.extensionId}`, // Explicitly allow ONLY extension
+  methods: ['GET', 'POST', 'OPTIONS'],
+}));
 app.use(express.json());
 
 // Request logging middleware
