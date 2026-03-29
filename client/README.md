@@ -39,15 +39,16 @@
 
 ```
 equalizer-extension/
-├── src/
-│   ├── manifest.json              # Manifest V3
-│   ├── background.ts              # Background Service Worker
-│   ├── offscreen.html             # Offscreen Document (Web Audio API Host)
-│   ├── offscreen.ts               # Audio Logic
-│   └── popup/
-│       ├── popup.html             # User Interface
-│       ├── popup.ts               # UI Event and Viusalization
-│       └── popup.css              
+├── client/
+│   ├── src/
+│   │   ├── manifest.json              # Manifest V3
+│   │   ├── background.ts              # Background Service Worker
+│   │   ├── offscreen.html             # Offscreen Document (Web Audio API Host)
+│   │   ├── offscreen.ts               # Audio Logic
+│   │   └── popup/
+│   │       ├── popup.html             # User Interface
+│   │       ├── popup.ts               # UI Event and Viusalization
+│   │       └── popup.css              
 ├── package.json
 ├── tsconfig.json
 ├── vite.config.ts

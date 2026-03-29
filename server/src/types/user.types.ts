@@ -1,6 +1,6 @@
 import { Timestamp, FieldValue } from 'firebase-admin/firestore';
 
-export type SubscriptionStatus = 'active' | 'past_due' | 'canceled' | 'none';
+export type SubscriptionStatus = 'active' | 'expired' | 'canceled' | 'none';
 export type PlanType = 'free' | 'pro' | 'premium';
 export type PaymentProvider = 'stripe' | 'paddle' | 'lemon_squeezy' | 'none';
 

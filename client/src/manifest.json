@@ -8,7 +8,8 @@
     "activeTab",
     "offscreen",
     "storage",
-    "sidePanel"
+    "sidePanel",
+    "identity"
   ],
   "host_permissions": [
     "<all_urls>"

@@ -12,6 +12,13 @@ const loginSchema = z.object({
   }),
 });
 
+const refreshSchema = z.object({
+  body: z.object({
+    refreshToken: z.string().min(1, 'Refresh Token is required'),
+  }),
+});
+
 authRouter.post('/login', validateRequest(loginSchema), AuthController.login);
+authRouter.post('/refresh', validateRequest(refreshSchema), AuthController.refresh);
 
 export default authRouter;

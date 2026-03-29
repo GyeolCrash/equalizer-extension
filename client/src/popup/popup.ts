@@ -7,6 +7,139 @@ interface EQNode {
   color: string;
 }
 
+class SubscriptionManager {
+  private isPro: boolean = false;
+  private retryCount = 0;
+  private readonly CACHE_TTL = 24 * 60 * 60 * 1000;
+  private readonly GRACE_PERIOD = 7 * 24 * 60 * 60 * 1000;
+  private readonly SERVER_URL = 'http://localhost:3000/api';
+
+  async initialize(): Promise<void> {
+    return new Promise((resolve) => {
+      chrome.storage.local.get(['subscription', 'lastChecked'], async (res) => {
+        const now = Date.now();
+        const lastChecked = (res.lastChecked as number) || 0;
+        const cachedSub = (res.subscription as string) || 'free';
+
+        if (now - lastChecked < this.CACHE_TTL) {
+          this.isPro = cachedSub === 'pro';
+          resolve();
+          return;
+        }
+
+        if (cachedSub === 'pro' && now - lastChecked < this.GRACE_PERIOD) {
+          this.isPro = true;
+          this.verifyWithBackoff();
+          resolve();
+        } else {
+          this.isPro = false;
+          await this.verifyWithBackoff();
+          resolve();
+        }
+      });
+    });
+  }
+
+  getIsPro(): boolean {
+    return this.isPro;
+  }
+
+  private async verifyWithBackoff() {
+    this.retryCount = 0;
+    await this.attemptVerification();
+  }
+
+  private async attemptVerification() {
+    try {
+      const authResult = await chrome.identity.getAuthToken({ interactive: true });
+
+      const token = authResult.token;
+
+      if (!token) {
+        throw new Error('Get token failed');
+      }
+
+      const response = await fetch(`${this.SERVER_URL}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idToken: token })
+      });
+
+      if (!response.ok) throw new Error('API Error');
+
+      const data = await response.json();
+      const plan = data.user?.plan || 'free';
+
+      this.isPro = plan === 'pro';
+      chrome.storage.local.set({
+        subscription: plan,
+        lastChecked: Date.now()
+      });
+      this.hideBanner();
+    } catch (e) {
+      console.error(e);
+      this.showBanner();
+    }
+  }
+
+  private showBanner() {
+    let banner = document.getElementById('subscription-banner');
+    if (!banner) {
+      banner = document.createElement('div');
+      banner.id = 'subscription-banner';
+      banner.style.display = 'flex';
+      banner.style.backgroundColor = '#a04040';
+      banner.style.color = 'white';
+      banner.style.padding = '8px 16px';
+      banner.style.alignItems = 'center';
+      banner.style.justifyContent = 'space-between';
+      banner.style.fontSize = '12px';
+
+      const msg = document.createElement('span');
+      msg.textContent = 'Subscription verification failed';
+      msg.style.flex = '1';
+
+      const retryBtn = document.createElement('button');
+      retryBtn.textContent = 'Retry';
+      retryBtn.className = 'btn';
+      retryBtn.style.padding = '4px 12px';
+      retryBtn.style.fontSize = '11px';
+
+      retryBtn.onclick = () => {
+        this.retryCount++;
+        const delay = Math.min(1000 * Math.pow(2, this.retryCount), 30000);
+        retryBtn.disabled = true;
+        retryBtn.textContent = 'Retrying...';
+        setTimeout(async () => {
+          await this.attemptVerification();
+          if (retryBtn) {
+            retryBtn.disabled = false;
+            retryBtn.textContent = 'Retry';
+          }
+        }, delay);
+      };
+
+      banner.appendChild(msg);
+      banner.appendChild(retryBtn);
+
+      const container = document.querySelector('.container');
+      if (container) {
+        container.insertBefore(banner, container.firstChild);
+      } else {
+        document.body.prepend(banner);
+      }
+    }
+    banner.style.display = 'flex';
+  }
+
+  private hideBanner() {
+    const banner = document.getElementById('subscription-banner');
+    if (banner) banner.style.display = 'none';
+  }
+}
+
+const subscriptionManager = new SubscriptionManager();
+
 class UIManager {
   private pendingTheme: string = 'system';
   private pendingViewMode: string = 'popup';
@@ -122,18 +255,23 @@ class UIManager {
       this.applyThemeLogic(this.pendingTheme);
 
       // 2. View Mode application
-      // TODO: Validate Pro Plan subscription here
+      if (this.pendingViewMode !== 'popup' && !subscriptionManager.getIsPro()) {
+        alert('Pro Plan is required to use Side Panel or New Tab modes.');
+        this.pendingViewMode = 'popup';
+        this.updateViewModeButtons();
+      }
+
       const modeChanged = this.pendingViewMode !== this.currentViewMode;
       this.currentViewMode = this.pendingViewMode;
       chrome.storage.local.set({ viewMode: this.pendingViewMode });
 
       if (this.pendingViewMode === 'sidePanel') {
         if ((chrome as any).sidePanel && (chrome as any).sidePanel.setPanelBehavior) {
-          (chrome as any).sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
+          (chrome as any).sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => { });
         }
       } else {
         if ((chrome as any).sidePanel && (chrome as any).sidePanel.setPanelBehavior) {
-          (chrome as any).sidePanel.setPanelBehavior({ openPanelOnActionClick: false }).catch(() => {});
+          (chrome as any).sidePanel.setPanelBehavior({ openPanelOnActionClick: false }).catch(() => { });
         }
       }
 
@@ -142,22 +280,22 @@ class UIManager {
           chrome.windows.getCurrent({ populate: false }, (win) => {
             if (win.id !== undefined && (chrome as any).sidePanel) {
               (chrome as any).sidePanel.open({ windowId: win.id }).then(() => {
-                 window.close();
+                window.close();
               }).catch(() => { window.close(); });
             }
           });
         } else if (this.pendingViewMode === 'newTab') {
           chrome.tabs.create({ url: chrome.runtime.getURL('src/popup/popup.html') }).then(() => {
-              window.close();
+            window.close();
           });
         } else {
           // Changed to Popup mode, close current window
           chrome.tabs.getCurrent((tab) => {
-              if (tab && tab.id) {
-                  chrome.tabs.remove(tab.id);
-              } else {
-                 window.close();
-              }
+            if (tab && tab.id) {
+              chrome.tabs.remove(tab.id);
+            } else {
+              window.close();
+            }
           });
         }
       }
@@ -208,7 +346,7 @@ class EQVisualizer {
           this.updateControlPanel();
           this.drawGraph();
         }
-        
+
         if (msg.data.masterGain !== undefined) {
           const masterGainInput = document.getElementById('masterGain') as HTMLInputElement;
           const display = document.getElementById('masterGainValue');
@@ -296,13 +434,17 @@ class EQVisualizer {
 
   private isInGraphArea(x: number, y: number): boolean {
     return x >= this.padding && x <= this.graphWidth - this.padding &&
-           y >= this.padding && y <= this.graphHeight - this.padding;
+      y >= this.padding && y <= this.graphHeight - this.padding;
   }
 
   addNode(x: number, y: number) {
-    // TODO: Validate Pro Plan subscription here. For Free Plan, max is 5.
-    const maxNodes = 20; // Cap at 20 for system stability
-    if (this.nodes.length >= maxNodes) return;
+    const maxNodes = subscriptionManager.getIsPro() ? 20 : 5; // Cap at 20 for system stability
+    if (this.nodes.length >= maxNodes) {
+      if (!subscriptionManager.getIsPro() && this.nodes.length >= 5) {
+        alert("Pro Plan is required to add more than 5 nodes.");
+      }
+      return;
+    }
 
     let id = 0;
     while (this.nodes.some(n => n.id === id)) {
@@ -313,7 +455,7 @@ class EQVisualizer {
       id, frequency: this.xToFrequency(x), Q: 1.0, gain: this.yToGain(y), type: 'peaking',
       color: this.colorPalette[id % this.colorPalette.length]
     };
-    
+
     this.nodes.push(node);
     this.nodes.sort((a, b) => a.id - b.id);
     this.selectNode(id);
@@ -446,7 +588,7 @@ class EQVisualizer {
   private drawGraph() {
     const { ctx, canvas, graphWidth, graphHeight, padding } = this;
     const styles = getComputedStyle(document.documentElement);
-    
+
     ctx.fillStyle = styles.getPropertyValue('--canvas-bg').trim() || '#0a0a0a';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
@@ -470,7 +612,7 @@ class EQVisualizer {
 
   private drawGridLines(styles: CSSStyleDeclaration) {
     const { ctx, padding, graphWidth, graphHeight } = this;
-    ctx.strokeStyle = styles.getPropertyValue('--grid-line-1').trim() || '#2a2a2a'; 
+    ctx.strokeStyle = styles.getPropertyValue('--grid-line-1').trim() || '#2a2a2a';
     ctx.lineWidth = 1;
     [20, 100, 500, 1000, 5000, 10000].forEach((freq) => {
       const x = this.frequencyToX(freq);
@@ -480,8 +622,8 @@ class EQVisualizer {
       const y = this.gainToY(gain);
       ctx.beginPath(); ctx.moveTo(padding, y); ctx.lineTo(graphWidth - padding, y); ctx.stroke();
     });
-    
-    ctx.strokeStyle = styles.getPropertyValue('--grid-line-2').trim() || '#444444'; 
+
+    ctx.strokeStyle = styles.getPropertyValue('--grid-line-2').trim() || '#444444';
     ctx.lineWidth = 2;
     const centerY = this.gainToY(0);
     ctx.beginPath(); ctx.moveTo(padding, centerY); ctx.lineTo(graphWidth - padding, centerY); ctx.stroke();
@@ -541,7 +683,7 @@ class EQVisualizer {
 
   private drawAxisLabels(styles: CSSStyleDeclaration) {
     const { ctx, padding, graphHeight } = this;
-    ctx.fillStyle = styles.getPropertyValue('--text-dark').trim() || '#777777'; 
+    ctx.fillStyle = styles.getPropertyValue('--text-dark').trim() || '#777777';
     ctx.font = '11px Arial'; ctx.textAlign = 'center';
     [{ freq: 20, label: '20' }, { freq: 100, label: '100' }, { freq: 1000, label: '1k' }, { freq: 10000, label: '10k' }]
       .forEach(({ freq, label }) => { ctx.fillText(label + ' Hz', this.frequencyToX(freq), graphHeight - 5); });
@@ -559,8 +701,8 @@ class EQVisualizer {
   }
 
   deleteSelectedNode() { if (this.selectedNodeId !== null) this.removeNode(this.selectedNodeId); }
-  
-  reset() { 
+
+  reset() {
     [...this.nodes.map(n => n.id)].forEach(id => this.removeNode(id));
     this.sendMasterGain(1.0);
     const masterGainInput = document.getElementById('masterGain') as HTMLInputElement;
@@ -570,15 +712,16 @@ class EQVisualizer {
       display.textContent = "0.0 dB";
     }
   }
-  
+
   startCaptureCommand() { this.backgroundPort.postMessage({ type: 'START_CAPTURE' }); }
   sendMasterGain(gain: number) { this.backgroundPort.postMessage({ type: 'SET_MASTER_GAIN', gain }); }
 }
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
+  await subscriptionManager.initialize();
   new UIManager();
   const visualizer = new EQVisualizer();
-  
+
   visualizer.startCaptureCommand();
 
   const masterGainInput = document.getElementById('masterGain') as HTMLInputElement;
@@ -599,4 +742,4 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 });
 
-export {};
+export { };
