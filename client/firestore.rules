@@ -10,10 +10,8 @@ service cloud.firestore {
       // Since the frontend uses Firebase Auth (or manual verification for Cloud Run), 
       // the document owner must be the authenticated user.
       allow read: if request.auth != null && request.auth.uid == userId;
-      
-      // Mutations are restricted. Server-side (Cloud Run) uses firebase-admin SDK 
-      // with a service account which bypasses these security rules.
-      allow write: if request.auth != null && request.auth.uid == userId;
+      // always deny write
+      allow write: if false;
     }
   }
 }

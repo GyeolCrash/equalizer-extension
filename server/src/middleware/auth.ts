@@ -44,10 +44,7 @@ export const verifyGoogleToken = async (idToken: string) => {
   }
 };
 
-// Step 2: Custom JWT Issuance
-export const generateToken = (payload: { uid: string; plan: string; email: string }) => {
-  return jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' });
-};
+
 
 // Step 3: Authorization Middleware
 export const requireAuth = (req: AuthenticatedRequest, res: Response, next: NextFunction) => {

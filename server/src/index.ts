@@ -2,7 +2,7 @@ import express, { Express, Request, Response } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
-import logger from './logger.js';
+import logger, { loggerContext } from './logger.js';
 import config from './config/env.js';
 import userRouter from './routes/user.js';
 import authRouter from './routes/auth.js';
@@ -33,18 +33,30 @@ app.use(cors({
   origin: `chrome-extension://${config.extensionId}`, // Explicitly allow ONLY extension
   methods: ['GET', 'POST', 'OPTIONS'],
 }));
-app.use(express.json());
+// Webhooks MUST be mounted before express.json() to capture raw unparsed body for signature validation
+app.use('/api/webhooks', webhookRouter);
 
+app.use(express.json());
 // Request logging middleware
 app.use((req: Request, res: Response, next) => {
-  logger.info({ method: req.method, url: req.url }, 'Incoming Request');
-  next();
+  const traceHeader = req.header('X-Cloud-Trace-Context');
+  let traceId = '';
+
+  if (traceHeader && process.env.GOOGLE_CLOUD_PROJECT) {
+    traceId = `projects/${process.env.GOOGLE_CLOUD_PROJECT}/traces/${traceHeader.split('/')[0]}`;
+  }
+
+  const context = traceId ? { 'logging.googleapis.com/trace': traceId } : {};
+
+  loggerContext.run(context, () => {
+    logger.info({ method: req.method, url: req.url }, 'Incoming Request');
+    next();
+  });
 });
 
 // Step 3: API Routers
 app.use('/api/auth', authRouter);
 app.use('/api/user', userRouter);
-app.use('/api/webhooks', webhookRouter);
 
 // Health Check
 app.get('/health', (req, res) => {

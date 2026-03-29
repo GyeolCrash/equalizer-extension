@@ -4,10 +4,9 @@ import { UserDAO } from '../dao/user.dao.js';
 import { db } from '../config/firebase.config.js'; // Ensure app is initialized
 import { getAuth } from 'firebase-admin/auth';
 import jwt from 'jsonwebtoken';
-import pino from 'pino';
+import logger from '../logger.js';
 import config from '../config/env.js';
 
-const logger = pino();
 const JWT_SECRET = config.jwtSecret;
 
 export class AuthController {

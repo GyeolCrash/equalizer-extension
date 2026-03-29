@@ -23,16 +23,19 @@ class SubscriptionManager {
 
         if (now - lastChecked < this.CACHE_TTL) {
           this.isPro = cachedSub === 'pro';
+          this.updateUIPerPlan();
           resolve();
           return;
         }
 
         if (cachedSub === 'pro' && now - lastChecked < this.GRACE_PERIOD) {
           this.isPro = true;
+          this.updateUIPerPlan();
           this.verifyWithBackoff();
           resolve();
         } else {
           this.isPro = false;
+          this.updateUIPerPlan();
           await this.verifyWithBackoff();
           resolve();
         }
@@ -44,14 +47,14 @@ class SubscriptionManager {
     return this.isPro;
   }
 
-  private async verifyWithBackoff() {
+  private async verifyWithBackoff(interactive: boolean = false) {
     this.retryCount = 0;
-    await this.attemptVerification();
+    await this.attemptVerification(interactive);
   }
 
-  private async attemptVerification() {
+  private async attemptVerification(interactive: boolean = false) {
     try {
-      const authResult = await chrome.identity.getAuthToken({ interactive: true });
+      const authResult = await chrome.identity.getAuthToken({ interactive });
 
       const token = authResult.token;
 
@@ -75,7 +78,19 @@ class SubscriptionManager {
         subscription: plan,
         lastChecked: Date.now()
       });
+      this.updateUIPerPlan();
       this.hideBanner();
+      
+      chrome.identity.getProfileUserInfo((userInfo) => {
+        const emailSpan = document.getElementById('accountEmail');
+        const loginBtn = document.getElementById('googleLoginBtn');
+        if (emailSpan && userInfo.email && loginBtn) {
+          emailSpan.textContent = userInfo.email;
+          emailSpan.style.display = 'inline';
+          loginBtn.style.display = 'none';
+        }
+      });
+      
     } catch (e) {
       console.error(e);
       this.showBanner();
@@ -111,7 +126,7 @@ class SubscriptionManager {
         retryBtn.disabled = true;
         retryBtn.textContent = 'Retrying...';
         setTimeout(async () => {
-          await this.attemptVerification();
+          await this.attemptVerification(false);
           if (retryBtn) {
             retryBtn.disabled = false;
             retryBtn.textContent = 'Retry';
@@ -135,6 +150,40 @@ class SubscriptionManager {
   private hideBanner() {
     const banner = document.getElementById('subscription-banner');
     if (banner) banner.style.display = 'none';
+  }
+
+  async forceSync(interactive: boolean = false) {
+    const icon = document.querySelector('#refreshSubBtn svg');
+    if (icon) icon.classList.add('spin');
+    
+    await chrome.storage.local.set({ lastChecked: 0 });
+    await this.verifyWithBackoff(interactive);
+    
+    if (icon) icon.classList.remove('spin');
+  }
+
+  openCustomerPortal() {
+    chrome.tabs.create({ url: 'https://polar.sh/equalizer' });
+  }
+
+  updateUIPerPlan() {
+    const headerBadge = document.getElementById('headerPlanBadge');
+    const settingsBadge = document.getElementById('settingsPlanBadge');
+    const upgradeBox = document.getElementById('upgradeToProContainer');
+    
+    const className = this.isPro ? 'pro' : 'free';
+    const text = this.isPro ? 'PRO' : 'FREE';
+
+    [headerBadge, settingsBadge].forEach(badge => {
+      if (badge) {
+        badge.className = `plan-badge ${className}`;
+        badge.textContent = text;
+      }
+    });
+
+    if (upgradeBox) {
+      upgradeBox.style.display = this.isPro ? 'none' : 'flex';
+    }
   }
 }
 
@@ -245,6 +294,16 @@ class UIManager {
     });
   }
 
+  static showUpgradeModal() {
+    const modal = document.getElementById('upgradeModal');
+    if (modal) modal.classList.add('visible');
+  }
+
+  static hideUpgradeModal() {
+    const modal = document.getElementById('upgradeModal');
+    if (modal) modal.classList.remove('visible');
+  }
+
   private setupApplyButton() {
     const applyBtn = document.getElementById('applySettingsBtn');
     if (!applyBtn) return;
@@ -256,7 +315,7 @@ class UIManager {
 
       // 2. View Mode application
       if (this.pendingViewMode !== 'popup' && !subscriptionManager.getIsPro()) {
-        alert('Pro Plan is required to use Side Panel or New Tab modes.');
+        UIManager.showUpgradeModal();
         this.pendingViewMode = 'popup';
         this.updateViewModeButtons();
       }
@@ -441,7 +500,7 @@ class EQVisualizer {
     const maxNodes = subscriptionManager.getIsPro() ? 20 : 5; // Cap at 20 for system stability
     if (this.nodes.length >= maxNodes) {
       if (!subscriptionManager.getIsPro() && this.nodes.length >= 5) {
-        alert("Pro Plan is required to add more than 5 nodes.");
+        UIManager.showUpgradeModal();
       }
       return;
     }
@@ -739,6 +798,31 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   document.getElementById('resetBtn')?.addEventListener('click', () => {
     chrome.runtime.reload();
+  });
+
+  document.getElementById('refreshSubBtn')?.addEventListener('click', () => {
+    subscriptionManager.forceSync();
+  });
+
+  document.getElementById('manageSubBtn')?.addEventListener('click', () => {
+    subscriptionManager.openCustomerPortal();
+  });
+
+  document.getElementById('upgradeToProBtn')?.addEventListener('click', () => {
+    subscriptionManager.openCustomerPortal();
+  });
+
+  document.getElementById('googleLoginBtn')?.addEventListener('click', () => {
+    subscriptionManager.forceSync(true); // Call interactively
+  });
+
+  document.getElementById('closeModalBtn')?.addEventListener('click', () => {
+    UIManager.hideUpgradeModal();
+  });
+
+  document.getElementById('modalUpgradeBtn')?.addEventListener('click', () => {
+    subscriptionManager.openCustomerPortal();
+    UIManager.hideUpgradeModal();
   });
 });
 

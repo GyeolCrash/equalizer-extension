@@ -1,15 +1,20 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Audio Manipulator: Compressor, EQ, Pitch</title>
     <link rel="stylesheet" href="./popup.css" />
 </head>
+
 <body>
     <div class="container">
         <header>
-            <h1>Audio Manipulator</h1>
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <h1>Audio Manipulator</h1>
+                <span id="headerPlanBadge" class="plan-badge free">FREE</span>
+            </div>
             <div class="tab-nav">
                 <button class="tab-btn active" data-target="eqTab">EQ</button>
                 <button class="tab-btn" data-target="settingsTab">Settings</button>
@@ -60,6 +65,43 @@
                     </div>
                 </div>
                 <div class="settings-group" style="margin-top: 8px;">
+                    <label>Account</label>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <button id="googleLoginBtn" class="btn"
+                            style="padding: 4px 12px; background-color: #ffffff; color: #444; border: 1px solid #ccc; border-radius: 4px; display: flex; align-items: center; gap: 6px;">
+                            <svg width="14" height="14" viewBox="0 0 48 48">
+                                <path fill="#EA4335"
+                                    d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z" />
+                                <path fill="#4285F4"
+                                    d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z" />
+                                <path fill="#FBBC05"
+                                    d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z" />
+                                <path fill="#34A853"
+                                    d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z" />
+                            </svg>
+                            Sign In with Google
+                        </button>
+                        <span id="accountEmail"
+                            style="display: none; font-size: 11px; color: var(--text-muted);"></span>
+                    </div>
+                </div>
+                <div class="settings-group" style="margin-top: 8px;">
+                    <label>Subscription</label>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <span id="settingsPlanBadge" class="plan-badge free">FREE</span>
+                        <button id="refreshSubBtn" class="icon-btn" title="Refresh Subscription">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
+                                fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                                stroke-linejoin="round" class="feather feather-refresh-cw">
+                                <polyline points="23 4 23 10 17 10"></polyline>
+                                <polyline points="1 20 1 14 7 14"></polyline>
+                                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+                            </svg>
+                        </button>
+                        <button id="manageSubBtn" class="btn" style="padding: 4px 8px;">Manage</button>
+                    </div>
+                </div>
+                <div class="settings-group" style="margin-top: 8px;">
                     <label>View Mode</label>
                     <div class="button-group" id="viewModeButtons">
                         <button class="btn-toggle active" data-mode-val="popup">Popup</button>
@@ -69,15 +111,37 @@
                 </div>
                 <div class="settings-group" style="margin-top: 8px;">
                     <label>Troubleshoot</label>
-                    <button id="resetBtn" class="btn btn-danger" style="flex: 0 0 auto; padding: 4px 16px;">Reset</button>
+                    <button id="resetBtn" class="btn btn-danger"
+                        style="flex: 0 0 auto; padding: 4px 16px;">Reset</button>
                 </div>
                 <div style="display: flex; justify-content: flex-end; margin-top: 16px;">
-                    <button id="applySettingsBtn" class="btn active" style="padding: 6px 20px; background-color: #2c4c2c; color: white;">Apply</button>
+                    <button id="applySettingsBtn" class="btn active"
+                        style="padding: 6px 20px; background-color: #2c4c2c; color: white;">Apply</button>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="upgradeToProContainer"
+        style="display: none; padding: 12px; background: linear-gradient(90deg, #d4af37, #f3e5ab); border-top: 1px solid var(--border-color); text-align: center; justify-content: center; align-items: center; gap: 12px;">
+        <span style="color: #443300; font-weight: bold; font-size: 13px;">Unlock unlimited nodes & side panel!</span>
+        <button id="upgradeToProBtn" class="btn" style="background-color: #443300; color: white;">Upgrade to
+            Pro</button>
+    </div>
+
+    <div id="upgradeModal" class="modal">
+        <div class="modal-content">
+            <h2>Pro Feature Required</h2>
+            <p>You need a Pro subscription to use this feature.</p>
+            <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px;">
+                <button id="closeModalBtn" class="btn btn-secondary">Cancel</button>
+                <button id="modalUpgradeBtn" class="btn" style="background-color: #d4af37; color: #111;">Upgrade
+                    Now</button>
             </div>
         </div>
     </div>
 
     <script type="module" src="./popup.ts"></script>
 </body>
+
 </html>

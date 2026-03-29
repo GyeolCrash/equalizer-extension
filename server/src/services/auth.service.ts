@@ -1,7 +1,5 @@
 import { OAuth2Client, TokenPayload } from 'google-auth-library';
-import pino from 'pino';
-
-const logger = pino();
+import logger from '../logger.js';
 const client = new OAuth2Client();
 
 export class AuthService {
@@ -21,7 +19,7 @@ export class AuthService {
       });
 
       const payload = ticket.getPayload();
-      
+
       if (!payload) {
         throw new Error('Invalid token payload');
       }

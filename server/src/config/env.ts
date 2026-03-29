@@ -1,14 +1,14 @@
 import dotenv from 'dotenv';
 import { SecretManagerServiceClient } from '@google-cloud/secret-manager';
-import pino from 'pino';
+import logger from '../logger.js';
 
 dotenv.config();
-const logger = pino();
 
-let jwtSecret = process.env.JWT_SECRET || 'gc-audio-secret';
+const isProd = process.env.NODE_ENV === 'production';
+let jwtSecret = process.env.JWT_SECRET;
 
 // Inject secret at runtime using GCP Secret Manager in production environments
-if (process.env.NODE_ENV === 'production' && process.env.GOOGLE_CLOUD_PROJECT) {
+if (isProd && process.env.GOOGLE_CLOUD_PROJECT) {
   const client = new SecretManagerServiceClient();
   const name = `projects/${process.env.GOOGLE_CLOUD_PROJECT}/secrets/JWT_SECRET/versions/latest`;
   try {
@@ -22,10 +22,23 @@ if (process.env.NODE_ENV === 'production' && process.env.GOOGLE_CLOUD_PROJECT) {
   }
 }
 
+const requireEnv = (key: string, value: string | undefined, defaultForDev: string) => {
+  if (!value) {
+    if (isProd) {
+      throw new Error(`CRITICAL: Missing required environment variable in production: ${key}`);
+    }
+    return defaultForDev;
+  }
+  return value;
+};
+
 export const config = {
   port: process.env.PORT || 8080,
-  jwtSecret,
-  googleClientId: process.env.GOOGLE_CLIENT_ID || 'gc-audio-client',
-  extensionId: process.env.EXTENSION_ID || 'gc-audio-extension',
+  jwtSecret: requireEnv('JWT_SECRET', jwtSecret, ''),
+  googleClientId: requireEnv('GOOGLE_CLIENT_ID', process.env.GOOGLE_CLIENT_ID, ''),
+  extensionId: requireEnv('EXTENSION_ID', process.env.EXTENSION_ID, ''),
+  polarWebhookSecret: process.env.POLAR_WEBHOOK_SECRET || '',
+  polarAccessToken: process.env.POLAR_ACCESS_TOKEN || '',
 };
+
 export default config;

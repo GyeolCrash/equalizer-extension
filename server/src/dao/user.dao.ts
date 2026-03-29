@@ -1,9 +1,7 @@
 import { db } from '../config/firebase.config.js';
 import { UserProfile, UserCreateData } from '../types/user.types.js';
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
-import pino from 'pino';
-
-const logger = pino();
+import logger from '../logger.js';
 const userCollection = db.collection('users');
 
 export class UserDAO {
@@ -43,7 +41,7 @@ export class UserDAO {
       };
 
       await userCollection.doc(googleUserId).set(newUser);
-      
+
       return { id: googleUserId, ...newUser } as UserProfile;
     } catch (error: any) {
       logger.error({ err: error }, 'Error creating user in Firestore');
@@ -56,14 +54,14 @@ export class UserDAO {
    */
   static async updateSubscriptionStatus(googleUserId: string, statusData: Partial<UserProfile>): Promise<void> {
     try {
-      // todo: Payment Provider logic and secure webhook verification should be implemented here.
       const updatePayload = {
         ...statusData,
         updated_at: FieldValue.serverTimestamp(),
       };
       await userCollection.doc(googleUserId).update(updatePayload);
+      logger.info({ googleUserId }, 'Successfully updated user subscription status');
     } catch (error: any) {
-      logger.error({ err: error }, 'Error updating user subscription in Firestore');
+      logger.error({ err: error, googleUserId }, 'Error updating user subscription in Firestore');
       throw error;
     }
   }

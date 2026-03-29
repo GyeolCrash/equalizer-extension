@@ -2,7 +2,7 @@ import { Timestamp, FieldValue } from 'firebase-admin/firestore';
 
 export type SubscriptionStatus = 'active' | 'expired' | 'canceled' | 'none';
 export type PlanType = 'free' | 'pro' | 'premium';
-export type PaymentProvider = 'stripe' | 'paddle' | 'lemon_squeezy' | 'none';
+export type PaymentProvider = 'polar' | 'none';
 
 export interface UserProfile {
   id: string; // Document ID (google_user_id)
