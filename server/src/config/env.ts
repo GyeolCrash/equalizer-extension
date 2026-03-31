@@ -39,6 +39,8 @@ export const config = {
   extensionId: requireEnv('EXTENSION_ID', process.env.EXTENSION_ID, ''),
   polarWebhookSecret: process.env.POLAR_WEBHOOK_SECRET || '',
   polarAccessToken: process.env.POLAR_ACCESS_TOKEN || '',
+  polarProProductId: process.env.POLAR_PRO_PRODUCT_ID || '',
+  cloudServerUrl: process.env.CLOUDSERVER_URL || `http://localhost:${process.env.PORT || 8080}`,
 };
 
 export default config;

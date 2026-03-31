@@ -1,38 +1,37 @@
 import { OAuth2Client, TokenPayload } from 'google-auth-library';
 import logger from '../logger.js';
-const client = new OAuth2Client();
+import config from '../config/env.js';
+const client = new OAuth2Client(config.googleClientId);
 
 export class AuthService {
   /**
-   * Verifies the Google ID Token provided by the Chrome Extension.
-   * Extracts and validates the 'sub', 'email', and 'name' claims.
-   * @param idToken The raw ID token from chrome.identity
+   * Verifies the Google OAuth2 Access Token provided by the Chrome Extension.
+   * Extracts and validates the 'sub' and 'email' claims.
+   * @param accessToken The raw access token from chrome.identity
    * @returns Validated token payload
    */
-  static async verifyGoogleToken(idToken: string): Promise<TokenPayload> {
+  static async verifyGoogleToken(accessToken: string): Promise<TokenPayload> {
     try {
-      const ticket = await client.verifyIdToken({
-        idToken,
-        // The audience should match the Chrome Extension's OAuth client ID
-        // In Cloud Run, we should load this from env variables.
-        audience: process.env.GOOGLE_CLIENT_ID,
-      });
-
-      const payload = ticket.getPayload();
-
-      if (!payload) {
-        throw new Error('Invalid token payload');
-      }
+      const tokenInfo = await client.getTokenInfo(accessToken);
 
       // Check claims
-      if (!payload.sub || !payload.email) {
+      if (!tokenInfo.sub || !tokenInfo.email) {
         throw new Error('Token is missing required claims (sub, email)');
       }
 
-      return payload;
+      // Map the returned TokenInfo back to a TokenPayload-like structure 
+      // (as it is used elsewhere in the controller)
+      return {
+        sub: tokenInfo.sub,
+        email: tokenInfo.email,
+        name: tokenInfo.email.split('@')[0],
+        aud: tokenInfo.aud,
+        exp: tokenInfo.expiry_date || 0,
+      } as unknown as TokenPayload;
+
     } catch (error) {
       logger.error({ err: error }, 'Google token verification failed');
-      throw new Error('Authentication failed: Invalid Google ID Token');
+      throw new Error('Authentication failed: Invalid Google Access Token');
     }
   }
 }

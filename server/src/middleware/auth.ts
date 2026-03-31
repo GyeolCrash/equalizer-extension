@@ -55,7 +55,7 @@ export const requireAuth = (req: AuthenticatedRequest, res: Response, next: Next
 
   const token = authHeader.split(' ')[1];
   try {
-    const decoded = jwt.verify(token, JWT_SECRET) as { uid: string; email: string; plan: string };
+    const decoded = jwt.verify(token, JWT_SECRET, { audience: config.googleClientId }) as { uid: string; email: string; plan: string };
     req.user = {
       uid: decoded.uid,
       email: decoded.email,

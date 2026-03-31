@@ -46,13 +46,13 @@ export class AuthController {
 
       // Step 2.5: Generate signed JWTs for Express middleware
       const accessToken = jwt.sign(
-        { uid: googleUserId, plan: user.plan_type },
+        { uid: googleUserId, plan: user.plan_type, email: user.email },
         JWT_SECRET,
         { expiresIn: '1h', audience: config.googleClientId } // Short expiration
       );
 
       const refreshToken = jwt.sign(
-        { uid: googleUserId },
+        { uid: googleUserId, email: user.email },
         JWT_SECRET,
         { expiresIn: '7d', audience: config.googleClientId } // Long expiration
       );
@@ -98,7 +98,7 @@ export class AuthController {
 
       // Generate a new 1h access token
       const newAccessToken = jwt.sign(
-        { uid: user.id, plan: user.plan_type },
+        { uid: user.id, plan: user.plan_type, email: user.email },
         JWT_SECRET,
         { expiresIn: '1h', audience: config.googleClientId }
       );

@@ -12,7 +12,8 @@ class SubscriptionManager {
   private retryCount = 0;
   private readonly CACHE_TTL = 24 * 60 * 60 * 1000;
   private readonly GRACE_PERIOD = 7 * 24 * 60 * 60 * 1000;
-  private readonly SERVER_URL = 'http://localhost:3000/api';
+  private readonly SERVER_URL = "http://localhost:8080/api"
+  //  private readonly SERVER_URL = 'https://audio-manipulator-backend-409927108308.us-central1.run.app/api';
 
   async initialize(): Promise<void> {
     return new Promise((resolve) => {
@@ -62,6 +63,8 @@ class SubscriptionManager {
         throw new Error('Get token failed');
       }
 
+      console.log('획득한 구글 액세스 토큰:', token);
+
       const response = await fetch(`${this.SERVER_URL}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -80,7 +83,7 @@ class SubscriptionManager {
       });
       this.updateUIPerPlan();
       this.hideBanner();
-      
+
       chrome.identity.getProfileUserInfo((userInfo) => {
         const emailSpan = document.getElementById('accountEmail');
         const loginBtn = document.getElementById('googleLoginBtn');
@@ -90,7 +93,7 @@ class SubscriptionManager {
           loginBtn.style.display = 'none';
         }
       });
-      
+
     } catch (e) {
       console.error(e);
       this.showBanner();
@@ -155,10 +158,10 @@ class SubscriptionManager {
   async forceSync(interactive: boolean = false) {
     const icon = document.querySelector('#refreshSubBtn svg');
     if (icon) icon.classList.add('spin');
-    
+
     await chrome.storage.local.set({ lastChecked: 0 });
     await this.verifyWithBackoff(interactive);
-    
+
     if (icon) icon.classList.remove('spin');
   }
 
@@ -170,7 +173,7 @@ class SubscriptionManager {
     const headerBadge = document.getElementById('headerPlanBadge');
     const settingsBadge = document.getElementById('settingsPlanBadge');
     const upgradeBox = document.getElementById('upgradeToProContainer');
-    
+
     const className = this.isPro ? 'pro' : 'free';
     const text = this.isPro ? 'PRO' : 'FREE';
 

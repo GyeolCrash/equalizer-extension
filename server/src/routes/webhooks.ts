@@ -19,8 +19,10 @@ webhookRouter.post('/polar', express.raw({ type: 'application/json' }), async (r
       return res.status(401).send('Missing webhook signature');
     }
 
-    // validateEvent requires body buffer, headers, and webhook secret
-    const event = validateEvent(req.body, req.headers as Record<string, string>, config.polarWebhookSecret);
+    // validateEvent requires body string (UTF-8), headers, and webhook secret. express.raw() parses payload as Buffer.
+    const payloadBuffer = req.body;
+    const payloadString = payloadBuffer instanceof Buffer ? payloadBuffer.toString('utf-8') : payloadBuffer;
+    const event = validateEvent(payloadString, req.headers as Record<string, string>, config.polarWebhookSecret);
     logger.info({ eventType: event.type }, 'Polar webhook verified successfully');
 
     // Handle Subscription events

@@ -7,6 +7,7 @@ import config from './config/env.js';
 import userRouter from './routes/user.js';
 import authRouter from './routes/auth.js';
 import webhookRouter from './routes/webhooks.js';
+import successRouter from './routes/success.js';
 
 const app: Express = express();
 const port = config.port;
@@ -35,6 +36,7 @@ app.use(cors({
 }));
 // Webhooks MUST be mounted before express.json() to capture raw unparsed body for signature validation
 app.use('/api/webhooks', webhookRouter);
+app.use('/success', successRouter);
 
 app.use(express.json());
 // Request logging middleware

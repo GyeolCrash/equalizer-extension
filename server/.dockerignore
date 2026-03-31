@@ -33,3 +33,6 @@ tsconfig.tsbuildinfo
 # Platform Specific
 .DS_Store
 Thumbs.db
+
+src/
+tsconfig.json
