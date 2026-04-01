@@ -45,6 +45,7 @@ class AccountManager {
   }
 
   // Revokes and removes the cached OAuth token. Transitions to SIGNED_OUT.
+  // Used for explicit user-initiated logout: revokes at Google + removes from Chrome cache.
   async logout(): Promise<void> {
     try {
       const authResult = await chrome.identity.getAuthToken({ interactive: false });
@@ -56,6 +57,21 @@ class AccountManager {
       }
     } catch (e) {
       console.error('AccountManager.logout token clear error:', e);
+    }
+    this.transitionTo('SIGNED_OUT');
+  }
+
+  // Removes a specific token from Chrome's OAuth cache and transitions to SIGNED_OUT.
+  // Use this only when the caller has confirmed the token is permanently invalid
+  // (e.g., revoked by the user on another device). Does NOT call Google's revoke endpoint.
+  // NOT called from SubscriptionManager.verify(); that path handles 401 via silent retry.
+  async invalidateCachedToken(token: string): Promise<void> {
+    try {
+      await new Promise<void>((resolve) =>
+        chrome.identity.removeCachedAuthToken({ token }, resolve as any)
+      );
+    } catch (e) {
+      console.error('AccountManager.invalidateCachedToken error:', e);
     }
     this.transitionTo('SIGNED_OUT');
   }
@@ -133,26 +149,52 @@ class SubscriptionManager {
   }
 
   // Sends a token to the backend and updates subscription state.
-  // All backend communication is isolated here; account UI is never affected.
-  async verify(token: string): Promise<void> {
+  // SubscriptionManager NEVER mutates AccountManager state directly.
+  // isRetry=true prevents infinite recursion on repeated 401s.
+  async verify(token: string, isRetry = false): Promise<void> {
+    let status: number | null = null;
     try {
       const response = await fetch(`${this.SERVER_URL}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ idToken: token })
       });
+      status = response.status;
 
-      if (!response.ok) throw new Error(`API Error: ${response.status}`);
+      // 2xx: backend accepted the request. plan:'free' is a valid result, NOT an error.
+      if (response.ok) {
+        const data = await response.json();
+        const plan: string = data.user?.plan || 'free';
+        this.isPro = plan === 'pro';
+        chrome.storage.local.set({ subscription: plan, lastChecked: Date.now() });
+        this.updateUIPerPlan();
+        this.hideBanner();
+        return;
+      }
 
-      const data = await response.json();
-      const plan: string = data.user?.plan || 'free';
+      // 401: the cached token is stale. Remove it from Chrome's cache and retry once
+      // with a fresh silent token. Logout is NOT triggered; the user stays SIGNED_IN.
+      if (status === 401 && !isRetry) {
+        console.warn('SubscriptionManager.verify: 401 received, refreshing token silently.');
+        await new Promise<void>(resolve =>
+          chrome.identity.removeCachedAuthToken({ token }, resolve as any)
+        );
+        const freshToken = await accountManager.getSilentToken();
+        if (freshToken) {
+          return this.verify(freshToken, true);
+        }
+        // Chrome could not issue a new silent token (e.g. refresh token also expired).
+        // Show the error banner so the user can manually log out and re-authenticate.
+        this.showBanner();
+        return;
+      }
 
-      this.isPro = plan === 'pro';
-      chrome.storage.local.set({ subscription: plan, lastChecked: Date.now() });
-      this.updateUIPerPlan();
-      this.hideBanner();
-    } catch (e) {
-      console.error('SubscriptionManager.verify error:', e);
+      // 401 on retry, or other 4xx/5xx: infrastructure error -> show retry banner.
+      throw new Error(`API Error: ${status}`);
+    } catch (e: unknown) {
+      if (status === 401) return;
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error('SubscriptionManager.verify error:', msg);
       this.showBanner();
     }
   }
