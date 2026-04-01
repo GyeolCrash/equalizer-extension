@@ -13,19 +13,21 @@ type AccountState = 'SIGNED_IN' | 'SIGNED_OUT';
 class AccountManager {
   private state: AccountState = 'SIGNED_OUT';
 
-  // Reads the current Google profile without triggering an interactive OAuth flow.
-  // Transitions UI to SIGNED_IN if a cached account exists, SIGNED_OUT otherwise.
+  // Determines signed-in state by checking Chrome's OAuth token cache (non-interactive).
+  // getProfileUserInfo is used only for display email; its result does NOT gate state.
+  // Requires identity.email permission for email display; sign-in state is unaffected without it.
   async initialize(): Promise<void> {
-    return new Promise((resolve) => {
-      chrome.identity.getProfileUserInfo({ accountStatus: 'ANY' }, (userInfo) => {
-        if (userInfo && userInfo.email) {
-          this.transitionTo('SIGNED_IN', userInfo.email);
-        } else {
-          this.transitionTo('SIGNED_OUT');
-        }
-        resolve();
-      });
-    });
+    try {
+      const authResult = await chrome.identity.getAuthToken({ interactive: false });
+      if (authResult.token) {
+        const email = await this.fetchEmail();
+        this.transitionTo('SIGNED_IN', email ?? undefined);
+        return;
+      }
+    } catch {
+      // No cached token or token refresh failed -> treat as signed out.
+    }
+    this.transitionTo('SIGNED_OUT');
   }
 
   // Launches the interactive Google OAuth flow. On success, transitions to SIGNED_IN
