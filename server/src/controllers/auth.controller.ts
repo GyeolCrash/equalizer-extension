@@ -72,6 +72,9 @@ export class AuthController {
 
     } catch (error: any) {
       logger.error('Authentication login error', error);
+      console.error('--- DEBUG: FULL STACK START ---');
+      console.error(error.stack || error);
+      console.error('--- DEBUG: FULL STACK END ---');
       return res.status(401).json({ error: error.message || 'Authentication Failed' });
     }
   }

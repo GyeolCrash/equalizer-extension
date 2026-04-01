@@ -9,8 +9,8 @@ export default defineConfig({
   },
   build: {
     outDir: 'dist',
-    sourcemap: false,
-    minify: 'esbuild',
+    sourcemap: true,
+    minify: false, // 'esbuild',
     rollupOptions: {
       input: {
         popup: path.resolve(__dirname, 'src/popup/popup.html'),
@@ -51,11 +51,11 @@ export default defineConfig({
 
         if (fs.existsSync(sourceDir)) {
           const files = fs.readdirSync(sourceDir);
-          
+
           files.forEach((file) => {
             const source = path.join(sourceDir, file);
             const dest = path.join(destDir, file);
-            
+
             if (fs.statSync(source).isFile()) {
               fs.copyFileSync(source, dest);
             }

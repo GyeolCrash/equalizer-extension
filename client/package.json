@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build && npm run obfuscate",
+    "build": "vite build",
     "obfuscate": "javascript-obfuscator ./dist --output ./dist --compact true --control-flow-flattening true --control-flow-flattening-threshold 0.5 --string-array true --string-array-encoding base64 --identifier-names-generator hexadecimal",
     "preview": "vite preview"
   },

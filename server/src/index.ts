@@ -30,6 +30,7 @@ const limiter = rateLimit({
 // Step 1: Middleware
 app.use(limiter);
 app.use(helmet());
+
 app.use(cors({
   origin: `chrome-extension://${config.extensionId}`, // Explicitly allow ONLY extension
   methods: ['GET', 'POST', 'OPTIONS'],

@@ -7,39 +7,123 @@ interface EQNode {
   color: string;
 }
 
+// Account states for the 2-state machine.
+type AccountState = 'SIGNED_IN' | 'SIGNED_OUT';
+
+class AccountManager {
+  private state: AccountState = 'SIGNED_OUT';
+
+  // Reads the current Google profile without triggering an interactive OAuth flow.
+  // Transitions UI to SIGNED_IN if a cached account exists, SIGNED_OUT otherwise.
+  async initialize(): Promise<void> {
+    return new Promise((resolve) => {
+      chrome.identity.getProfileUserInfo({ accountStatus: 'ANY' }, (userInfo) => {
+        if (userInfo && userInfo.email) {
+          this.transitionTo('SIGNED_IN', userInfo.email);
+        } else {
+          this.transitionTo('SIGNED_OUT');
+        }
+        resolve();
+      });
+    });
+  }
+
+  // Launches the interactive Google OAuth flow. On success, transitions to SIGNED_IN
+  // and returns the access token for the caller to forward to SubscriptionManager.
+  async login(): Promise<string | null> {
+    try {
+      const authResult = await chrome.identity.getAuthToken({ interactive: true });
+      if (!authResult.token) return null;
+
+      const email = await this.fetchEmail();
+      this.transitionTo('SIGNED_IN', email ?? undefined);
+      return authResult.token;
+    } catch (e) {
+      console.error('AccountManager.login error:', e);
+      return null;
+    }
+  }
+
+  // Revokes and removes the cached OAuth token. Transitions to SIGNED_OUT.
+  async logout(): Promise<void> {
+    try {
+      const authResult = await chrome.identity.getAuthToken({ interactive: false });
+      if (authResult.token) {
+        await new Promise<void>((resolve) =>
+          chrome.identity.removeCachedAuthToken({ token: authResult.token! }, resolve as any)
+        );
+        await fetch(`https://accounts.google.com/o/oauth2/revoke?token=${authResult.token}`);
+      }
+    } catch (e) {
+      console.error('AccountManager.logout token clear error:', e);
+    }
+    this.transitionTo('SIGNED_OUT');
+  }
+
+  // Silently fetches a cached token without user interaction.
+  // Returns null if no cached token is available.
+  async getSilentToken(): Promise<string | null> {
+    try {
+      const authResult = await chrome.identity.getAuthToken({ interactive: false });
+      return authResult.token ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  getState(): AccountState {
+    return this.state;
+  }
+
+  private async fetchEmail(): Promise<string | null> {
+    return new Promise((resolve) => {
+      chrome.identity.getProfileUserInfo({ accountStatus: 'ANY' }, (info) => {
+        resolve(info?.email ?? null);
+      });
+    });
+  }
+
+  private transitionTo(nextState: AccountState, email?: string): void {
+    this.state = nextState;
+
+    const emailSpan = document.getElementById('accountEmail');
+    const loginBtn = document.getElementById('googleLoginBtn') as HTMLButtonElement | null;
+    const logoutBtn = document.getElementById('googleLogoutBtn') as HTMLButtonElement | null;
+
+    if (nextState === 'SIGNED_IN') {
+      if (emailSpan) {
+        emailSpan.textContent = email ?? '';
+        emailSpan.style.display = email ? 'inline' : 'none';
+      }
+      if (loginBtn) loginBtn.style.display = 'none';
+      if (logoutBtn) logoutBtn.style.display = 'block';
+    } else {
+      if (emailSpan) {
+        emailSpan.textContent = '';
+        emailSpan.style.display = 'none';
+      }
+      if (loginBtn) loginBtn.style.display = 'flex';
+      if (logoutBtn) logoutBtn.style.display = 'none';
+    }
+  }
+}
+
 class SubscriptionManager {
   private isPro: boolean = false;
   private retryCount = 0;
   private readonly CACHE_TTL = 24 * 60 * 60 * 1000;
   private readonly GRACE_PERIOD = 7 * 24 * 60 * 60 * 1000;
-  private readonly SERVER_URL = "http://localhost:8080/api"
-  //  private readonly SERVER_URL = 'https://audio-manipulator-backend-409927108308.us-central1.run.app/api';
+  private readonly SERVER_URL = "http://localhost:8080/api";
+  // private readonly SERVER_URL = 'https://audio-manipulator-backend-409927108308.us-central1.run.app/api';
 
-  async initialize(): Promise<void> {
+  // Loads from cache only. Does NOT call the backend or request a token.
+  async initializeFromCache(): Promise<void> {
     return new Promise((resolve) => {
-      chrome.storage.local.get(['subscription', 'lastChecked'], async (res) => {
-        const now = Date.now();
-        const lastChecked = (res.lastChecked as number) || 0;
+      chrome.storage.local.get(['subscription', 'lastChecked'], (res) => {
         const cachedSub = (res.subscription as string) || 'free';
-
-        if (now - lastChecked < this.CACHE_TTL) {
-          this.isPro = cachedSub === 'pro';
-          this.updateUIPerPlan();
-          resolve();
-          return;
-        }
-
-        if (cachedSub === 'pro' && now - lastChecked < this.GRACE_PERIOD) {
-          this.isPro = true;
-          this.updateUIPerPlan();
-          this.verifyWithBackoff();
-          resolve();
-        } else {
-          this.isPro = false;
-          this.updateUIPerPlan();
-          await this.verifyWithBackoff();
-          resolve();
-        }
+        this.isPro = cachedSub === 'pro';
+        this.updateUIPerPlan();
+        resolve();
       });
     });
   }
@@ -48,59 +132,77 @@ class SubscriptionManager {
     return this.isPro;
   }
 
-  private async verifyWithBackoff(interactive: boolean = false) {
-    this.retryCount = 0;
-    await this.attemptVerification(interactive);
-  }
-
-  private async attemptVerification(interactive: boolean = false) {
+  // Sends a token to the backend and updates subscription state.
+  // All backend communication is isolated here; account UI is never affected.
+  async verify(token: string): Promise<void> {
     try {
-      const authResult = await chrome.identity.getAuthToken({ interactive });
-
-      const token = authResult.token;
-
-      if (!token) {
-        throw new Error('Get token failed');
-      }
-
-      console.log('획득한 구글 액세스 토큰:', token);
-
       const response = await fetch(`${this.SERVER_URL}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ idToken: token })
       });
 
-      if (!response.ok) throw new Error('API Error');
+      if (!response.ok) throw new Error(`API Error: ${response.status}`);
 
       const data = await response.json();
-      const plan = data.user?.plan || 'free';
+      const plan: string = data.user?.plan || 'free';
 
       this.isPro = plan === 'pro';
-      chrome.storage.local.set({
-        subscription: plan,
-        lastChecked: Date.now()
-      });
+      chrome.storage.local.set({ subscription: plan, lastChecked: Date.now() });
       this.updateUIPerPlan();
       this.hideBanner();
-
-      chrome.identity.getProfileUserInfo((userInfo) => {
-        const emailSpan = document.getElementById('accountEmail');
-        const loginBtn = document.getElementById('googleLoginBtn');
-        if (emailSpan && userInfo.email && loginBtn) {
-          emailSpan.textContent = userInfo.email;
-          emailSpan.style.display = 'inline';
-          loginBtn.style.display = 'none';
-        }
-      });
-
     } catch (e) {
-      console.error(e);
+      console.error('SubscriptionManager.verify error:', e);
       this.showBanner();
     }
   }
 
-  private showBanner() {
+  // Resets subscription to FREE and clears the cache. Called after logout.
+  clearAndReset(): void {
+    this.isPro = false;
+    this.retryCount = 0;
+    chrome.storage.local.remove(['subscription', 'lastChecked']);
+    this.updateUIPerPlan();
+    this.hideBanner();
+  }
+
+  // Forces a backend re-check using a provided token. Spins the refresh icon.
+  async forceSync(token: string): Promise<void> {
+    const icon = document.querySelector('#refreshSubBtn svg');
+    if (icon) icon.classList.add('spin');
+
+    this.retryCount = 0;
+    await chrome.storage.local.set({ lastChecked: 0 });
+    await this.verify(token);
+
+    if (icon) icon.classList.remove('spin');
+  }
+
+  openCustomerPortal(): void {
+    chrome.tabs.create({ url: 'https://polar.sh/equalizer' });
+  }
+
+  updateUIPerPlan(): void {
+    const headerBadge = document.getElementById('headerPlanBadge');
+    const settingsBadge = document.getElementById('settingsPlanBadge');
+    const upgradeBox = document.getElementById('upgradeToProContainer');
+
+    const className = this.isPro ? 'pro' : 'free';
+    const text = this.isPro ? 'PRO' : 'FREE';
+
+    [headerBadge, settingsBadge].forEach(badge => {
+      if (badge) {
+        badge.className = `plan-badge ${className}`;
+        badge.textContent = text;
+      }
+    });
+
+    if (upgradeBox) {
+      upgradeBox.style.display = this.isPro ? 'none' : 'flex';
+    }
+  }
+
+  private showBanner(): void {
     let banner = document.getElementById('subscription-banner');
     if (!banner) {
       banner = document.createElement('div');
@@ -129,11 +231,10 @@ class SubscriptionManager {
         retryBtn.disabled = true;
         retryBtn.textContent = 'Retrying...';
         setTimeout(async () => {
-          await this.attemptVerification(false);
-          if (retryBtn) {
-            retryBtn.disabled = false;
-            retryBtn.textContent = 'Retry';
-          }
+          const token = await accountManager.getSilentToken();
+          if (token) await this.verify(token);
+          retryBtn.disabled = false;
+          retryBtn.textContent = 'Retry';
         }, delay);
       };
 
@@ -150,46 +251,13 @@ class SubscriptionManager {
     banner.style.display = 'flex';
   }
 
-  private hideBanner() {
+  private hideBanner(): void {
     const banner = document.getElementById('subscription-banner');
     if (banner) banner.style.display = 'none';
   }
-
-  async forceSync(interactive: boolean = false) {
-    const icon = document.querySelector('#refreshSubBtn svg');
-    if (icon) icon.classList.add('spin');
-
-    await chrome.storage.local.set({ lastChecked: 0 });
-    await this.verifyWithBackoff(interactive);
-
-    if (icon) icon.classList.remove('spin');
-  }
-
-  openCustomerPortal() {
-    chrome.tabs.create({ url: 'https://polar.sh/equalizer' });
-  }
-
-  updateUIPerPlan() {
-    const headerBadge = document.getElementById('headerPlanBadge');
-    const settingsBadge = document.getElementById('settingsPlanBadge');
-    const upgradeBox = document.getElementById('upgradeToProContainer');
-
-    const className = this.isPro ? 'pro' : 'free';
-    const text = this.isPro ? 'PRO' : 'FREE';
-
-    [headerBadge, settingsBadge].forEach(badge => {
-      if (badge) {
-        badge.className = `plan-badge ${className}`;
-        badge.textContent = text;
-      }
-    });
-
-    if (upgradeBox) {
-      upgradeBox.style.display = this.isPro ? 'none' : 'flex';
-    }
-  }
 }
 
+const accountManager = new AccountManager();
 const subscriptionManager = new SubscriptionManager();
 
 class UIManager {
@@ -780,7 +848,12 @@ class EQVisualizer {
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
-  await subscriptionManager.initialize();
+  // 1. Render account UI immediately from cached profile (no backend call).
+  await accountManager.initialize();
+
+  // 2. Render subscription badge from local cache only.
+  await subscriptionManager.initializeFromCache();
+
   new UIManager();
   const visualizer = new EQVisualizer();
 
@@ -803,8 +876,26 @@ document.addEventListener('DOMContentLoaded', async () => {
     chrome.runtime.reload();
   });
 
-  document.getElementById('refreshSubBtn')?.addEventListener('click', () => {
-    subscriptionManager.forceSync();
+  // Login: acquires token interactively, transitions account UI, then forwards token to subscription.
+  document.getElementById('googleLoginBtn')?.addEventListener('click', async () => {
+    const token = await accountManager.login();
+    if (token) {
+      await subscriptionManager.verify(token);
+    }
+  });
+
+  // Logout: revokes token, resets account UI, resets subscription to FREE.
+  document.getElementById('googleLogoutBtn')?.addEventListener('click', async () => {
+    await accountManager.logout();
+    subscriptionManager.clearAndReset();
+  });
+
+  // Refresh: silent token fetch -> backend DB call only. Does NOT touch account UI.
+  document.getElementById('refreshSubBtn')?.addEventListener('click', async () => {
+    const token = await accountManager.getSilentToken();
+    if (token) {
+      await subscriptionManager.forceSync(token);
+    }
   });
 
   document.getElementById('manageSubBtn')?.addEventListener('click', () => {
@@ -813,10 +904,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   document.getElementById('upgradeToProBtn')?.addEventListener('click', () => {
     subscriptionManager.openCustomerPortal();
-  });
-
-  document.getElementById('googleLoginBtn')?.addEventListener('click', () => {
-    subscriptionManager.forceSync(true); // Call interactively
   });
 
   document.getElementById('closeModalBtn')?.addEventListener('click', () => {
