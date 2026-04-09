@@ -7,35 +7,32 @@ import { PlanType, SubscriptionStatus } from '../types/user.types.js';
 
 const webhookRouter = express.Router();
 
-// Define the REST entry path for Polar Webhooks.
-// We use express.raw to retrieve the exact binary Buffer of the payload to verify its cryptographic signature.
+// express.raw() must capture the unparsed Buffer for Polar signature verification.
 webhookRouter.post('/polar', express.raw({ type: 'application/json' }), async (req: Request, res: Response): Promise<any> => {
   try {
     const signature = req.headers['webhook-signature'];
 
-    // Validate that the request has a signature
     if (typeof signature !== 'string') {
       logger.warn('Webhook request missing signature');
       return res.status(401).send('Missing webhook signature');
     }
 
-    // validateEvent requires body string (UTF-8), headers, and webhook secret. express.raw() parses payload as Buffer.
     const payloadBuffer = req.body;
     const payloadString = payloadBuffer instanceof Buffer ? payloadBuffer.toString('utf-8') : payloadBuffer;
     const event = validateEvent(payloadString, req.headers as Record<string, string>, config.polarWebhookSecret);
     logger.info({ eventType: event.type }, 'Polar webhook verified successfully');
 
-    // Handle Subscription events
     if (
       event.type === 'subscription.created' ||
       event.type === 'subscription.updated' ||
       event.type === 'subscription.active'
     ) {
       const payload = event.data as any;
-      const googleUserId = payload.metadata?.google_user_id || payload.customer?.metadata?.google_user_id;
+      // user_id holds the Supabase Auth UUID set during checkout session creation
+      const userId = payload.metadata?.user_id || payload.customer?.metadata?.user_id;
 
-      if (!googleUserId) {
-        logger.warn({ subId: payload.id }, 'Subscription event received without google_user_id metadata');
+      if (!userId) {
+        logger.warn({ subId: payload.id }, 'Subscription event received without user_id metadata');
         return res.status(200).send('Ignored: missing metadata');
       }
 
@@ -50,24 +47,22 @@ webhookRouter.post('/polar', express.raw({ type: 'application/json' }), async (r
         subStatus = 'canceled';
       }
 
-      let current_period_end = new Date();
-      if (payload.current_period_end) {
-        current_period_end = new Date(payload.current_period_end);
-      }
+      const current_period_end = payload.current_period_end
+        ? new Date(payload.current_period_end).toISOString()
+        : new Date().toISOString();
 
-      await UserDAO.updateSubscriptionStatus(googleUserId, {
+      await UserDAO.updateSubscriptionStatus(userId, {
         subscription_status: subStatus,
         plan_type: planType,
         payment_provider: 'polar',
         provider_subscription_id: payload.id,
         provider_customer_id: payload.customer_id,
-        current_period_end: current_period_end,
+        current_period_end,
       });
 
-      logger.info({ googleUserId, subStatus }, 'Successfully synced polar subscription state');
+      logger.info({ userId, subStatus }, 'Successfully synced polar subscription state');
     }
 
-    // Return 2xx HTTP status to acknowledge receipt
     return res.status(200).send('OK');
 
   } catch (error) {

@@ -1,68 +1,72 @@
-import { db } from '../config/firebase.config.js';
+import { supabase } from '../config/supabase.config.js';
 import { UserProfile, UserCreateData } from '../types/user.types.js';
-import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import logger from '../logger.js';
-const userCollection = db.collection('users');
 
 export class UserDAO {
   /**
-   * Retrieves user profile by Google User ID (sub claim).
+   * Retrieves user profile by Supabase Auth UUID.
    */
-  static async getUserById(googleUserId: string): Promise<UserProfile | null> {
-    try {
-      const userDoc = await userCollection.doc(googleUserId).get();
-      if (!userDoc.exists) {
-        return null;
-      }
-      return { id: userDoc.id, ...userDoc.data() } as UserProfile;
-    } catch (error: any) {
-      logger.error({ err: error }, 'Error fetching user from Firestore');
+  static async getUserById(userId: string): Promise<UserProfile | null> {
+    const { data, error } = await supabase
+      .from('users')
+      .select('*')
+      .eq('id', userId)
+      .single();
+
+    if (error) {
+      if (error.code === 'PGRST116') return null; // Row not found
+      logger.error({ err: error }, 'Error fetching user from Supabase');
       throw error;
     }
+    return data as UserProfile;
   }
 
   /**
-   * Creates a new user entry with 'free' plan and 'none' subscription status.
+   * Creates a new user row with 'free' plan and 'none' subscription status.
+   * The id must match the corresponding Supabase Auth user UUID.
    */
-  static async createUserProfile(googleUserId: string, userData: UserCreateData): Promise<UserProfile> {
-    try {
-      const now = FieldValue.serverTimestamp();
-      const newUser: Omit<UserProfile, 'id'> = {
-        email: userData.email,
-        display_name: userData.display_name,
-        subscription_status: 'none',
-        plan_type: 'free',
-        current_period_end: Timestamp.now(), // Use current time as default expiration
-        payment_provider: 'none',
-        provider_customer_id: '',
-        provider_subscription_id: '',
-        created_at: now,
-        updated_at: now,
-      };
+  static async createUserProfile(userId: string, userData: UserCreateData): Promise<UserProfile> {
+    const now = new Date().toISOString();
+    const newUser = {
+      id: userId,
+      email: userData.email,
+      display_name: userData.display_name,
+      subscription_status: 'none' as const,
+      plan_type: 'free' as const,
+      current_period_end: null,
+      payment_provider: 'none' as const,
+      provider_customer_id: '',
+      provider_subscription_id: '',
+      created_at: now,
+      updated_at: now,
+    };
 
-      await userCollection.doc(googleUserId).set(newUser);
+    const { data, error } = await supabase
+      .from('users')
+      .insert(newUser)
+      .select()
+      .single();
 
-      return { id: googleUserId, ...newUser } as UserProfile;
-    } catch (error: any) {
-      logger.error({ err: error }, 'Error creating user in Firestore');
+    if (error) {
+      logger.error({ err: error }, 'Error creating user in Supabase');
       throw error;
     }
+    return data as UserProfile;
   }
 
   /**
-   * Updates subscription status and plan type.
+   * Updates subscription fields. Called by the Polar webhook handler.
    */
-  static async updateSubscriptionStatus(googleUserId: string, statusData: Partial<UserProfile>): Promise<void> {
-    try {
-      const updatePayload = {
-        ...statusData,
-        updated_at: FieldValue.serverTimestamp(),
-      };
-      await userCollection.doc(googleUserId).update(updatePayload);
-      logger.info({ googleUserId }, 'Successfully updated user subscription status');
-    } catch (error: any) {
-      logger.error({ err: error, googleUserId }, 'Error updating user subscription in Firestore');
+  static async updateSubscriptionStatus(userId: string, statusData: Partial<UserProfile>): Promise<void> {
+    const { error } = await supabase
+      .from('users')
+      .update({ ...statusData, updated_at: new Date().toISOString() })
+      .eq('id', userId);
+
+    if (error) {
+      logger.error({ err: error, userId }, 'Error updating subscription in Supabase');
       throw error;
     }
+    logger.info({ userId }, 'Successfully updated user subscription status');
   }
 }

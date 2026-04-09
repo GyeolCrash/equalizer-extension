@@ -6,14 +6,12 @@ import config from '../config/env.js';
 
 export class PaymentController {
     /**
-     * Pro 플랜 결제를 위한 Checkout URL 발급
+     * Issues a Polar checkout URL for Pro plan purchase.
      */
     static async createCheckout(req: Request, res: Response): Promise<Response> {
         try {
-            // req.user는 requireAuth 미들웨어에서 인증된 사용자 정보를 보장함.
             const user = req.user!;
             const { successUrl } = req.body;
-
             const defaultSuccessUrl = `${config.cloudServerUrl}/success`;
 
             const checkoutUrl = await PolarService.createCheckoutSession(
@@ -30,7 +28,7 @@ export class PaymentController {
     }
 
     /**
-     * Free 플랜 다운그레이드 및 정기구독 갱신/관리를 위한 Customer Portal URL 발급
+     * Issues a Polar Customer Portal URL for subscription management.
      */
     static async manageSubscription(req: Request, res: Response): Promise<Response> {
         try {
@@ -38,11 +36,11 @@ export class PaymentController {
             const userProfile = await UserDAO.getUserById(user.uid);
 
             if (!userProfile) {
-                return res.status(404).json({ error: 'Firestore DB에서 사용자 프로필을 찾을 수 없습니다.' });
+                return res.status(404).json({ error: 'User profile not found.' });
             }
 
             if (!userProfile.provider_customer_id) {
-                return res.status(400).json({ error: '활성화된 구독 이력(Provider Customer ID)이 존재하지 않습니다.' });
+                return res.status(400).json({ error: 'No active subscription history found.' });
             }
 
             const portalUrl = await PolarService.createCustomerPortalSession(userProfile.provider_customer_id);

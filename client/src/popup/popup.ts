@@ -1,3 +1,20 @@
+import { createClient } from '@supabase/supabase-js';
+
+const supabase = createClient(
+  import.meta.env.VITE_SUPABASE_URL as string,
+  import.meta.env.VITE_SUPABASE_ANON_KEY as string,
+  { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } }
+);
+
+const SESSION_KEY = 'supabase_session';
+
+interface StoredSession {
+  access_token: string;
+  refresh_token: string;
+  expires_at: number;
+  user?: { email?: string };
+}
+
 interface EQNode {
   id: number;
   frequency: number;
@@ -13,92 +30,115 @@ type AccountState = 'SIGNED_IN' | 'SIGNED_OUT';
 class AccountManager {
   private state: AccountState = 'SIGNED_OUT';
 
-  // Determines signed-in state by checking Chrome's OAuth token cache (non-interactive).
-  // getProfileUserInfo is used only for display email; its result does NOT gate state.
-  // Requires identity.email permission for email display; sign-in state is unaffected without it.
+  // Restores sign-in state from chrome.storage. Refreshes the session if the access token is near expiry.
   async initialize(): Promise<void> {
-    try {
-      const authResult = await chrome.identity.getAuthToken({ interactive: false });
-      if (authResult.token) {
-        const email = await this.fetchEmail();
-        this.transitionTo('SIGNED_IN', email ?? undefined);
+    const stored = await new Promise<{ [SESSION_KEY]?: StoredSession }>(resolve =>
+      chrome.storage.local.get([SESSION_KEY], resolve as any)
+    );
+    const session = stored[SESSION_KEY];
+    if (!session?.access_token) {
+      this.transitionTo('SIGNED_OUT');
+      return;
+    }
+
+    const isExpired = session.expires_at && (Date.now() / 1000) >= (session.expires_at - 60);
+    if (!isExpired) {
+      this.transitionTo('SIGNED_IN', session.user?.email);
+      return;
+    }
+
+    if (session.refresh_token) {
+      const { data, error } = await supabase.auth.refreshSession({ refresh_token: session.refresh_token });
+      if (data.session && !error) {
+        await this.storeSession(data.session, data.user?.email);
+        this.transitionTo('SIGNED_IN', data.user?.email);
         return;
       }
-    } catch {
-      // No cached token or token refresh failed -> treat as signed out.
     }
+
+    await new Promise<void>(resolve => chrome.storage.local.remove([SESSION_KEY], resolve));
     this.transitionTo('SIGNED_OUT');
   }
 
-  // Launches the interactive Google OAuth flow. On success, transitions to SIGNED_IN
-  // and returns the access token for the caller to forward to SubscriptionManager.
+  // Launches Supabase OAuth (Google) via launchWebAuthFlow. Returns the Supabase access token on success.
   async login(): Promise<string | null> {
-    try {
-      const authResult = await chrome.identity.getAuthToken({ interactive: true });
-      if (!authResult.token) return null;
+    const redirectUrl = chrome.identity.getRedirectURL();
+    const { data, error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo: redirectUrl, skipBrowserRedirect: true },
+    });
 
-      const email = await this.fetchEmail();
-      this.transitionTo('SIGNED_IN', email ?? undefined);
-      return authResult.token;
-    } catch (e) {
-      console.error('AccountManager.login error:', e);
+    if (error || !data.url) {
+      console.error('AccountManager.login: failed to get OAuth URL', error);
       return null;
     }
+
+    return new Promise((resolve) => {
+      chrome.identity.launchWebAuthFlow({ url: data.url!, interactive: true }, async (callbackUrl) => {
+        if (chrome.runtime.lastError || !callbackUrl) {
+          console.error('AccountManager.login: launchWebAuthFlow failed', chrome.runtime.lastError);
+          resolve(null);
+          return;
+        }
+
+        const hash = new URLSearchParams(new URL(callbackUrl).hash.substring(1));
+        const access_token = hash.get('access_token');
+        const refresh_token = hash.get('refresh_token');
+
+        if (!access_token || !refresh_token) { resolve(null); return; }
+
+        const { data: sessionData, error: setError } = await supabase.auth.setSession({ access_token, refresh_token });
+        if (setError || !sessionData.session) { resolve(null); return; }
+
+        await this.storeSession(sessionData.session, sessionData.user?.email ?? undefined);
+        this.transitionTo('SIGNED_IN', sessionData.user?.email ?? undefined);
+        resolve(access_token);
+      });
+    });
   }
 
-  // Revokes and removes the cached OAuth token. Transitions to SIGNED_OUT.
-  // Used for explicit user-initiated logout: revokes at Google + removes from Chrome cache.
+  // Signs out from Supabase and clears the stored session.
   async logout(): Promise<void> {
-    try {
-      const authResult = await chrome.identity.getAuthToken({ interactive: false });
-      if (authResult.token) {
-        await new Promise<void>((resolve) =>
-          chrome.identity.removeCachedAuthToken({ token: authResult.token! }, resolve as any)
-        );
-        await fetch(`https://accounts.google.com/o/oauth2/revoke?token=${authResult.token}`);
-      }
-    } catch (e) {
-      console.error('AccountManager.logout token clear error:', e);
-    }
+    await supabase.auth.signOut().catch(() => { });
+    await new Promise<void>(resolve => chrome.storage.local.remove([SESSION_KEY], resolve));
     this.transitionTo('SIGNED_OUT');
   }
 
-  // Removes a specific token from Chrome's OAuth cache and transitions to SIGNED_OUT.
-  // Use this only when the caller has confirmed the token is permanently invalid
-  // (e.g., revoked by the user on another device). Does NOT call Google's revoke endpoint.
-  // NOT called from SubscriptionManager.verify(); that path handles 401 via silent retry.
-  async invalidateCachedToken(token: string): Promise<void> {
-    try {
-      await new Promise<void>((resolve) =>
-        chrome.identity.removeCachedAuthToken({ token }, resolve as any)
-      );
-    } catch (e) {
-      console.error('AccountManager.invalidateCachedToken error:', e);
-    }
-    this.transitionTo('SIGNED_OUT');
-  }
-
-  // Silently fetches a cached token without user interaction.
-  // Returns null if no cached token is available.
+  // Returns a valid access token, refreshing if near expiry. Returns null if no session exists.
   async getSilentToken(): Promise<string | null> {
-    try {
-      const authResult = await chrome.identity.getAuthToken({ interactive: false });
-      return authResult.token ?? null;
-    } catch {
-      return null;
+    const stored = await new Promise<{ [SESSION_KEY]?: StoredSession }>(resolve =>
+      chrome.storage.local.get([SESSION_KEY], resolve as any)
+    );
+    const session = stored[SESSION_KEY];
+    if (!session?.access_token) return null;
+
+    const isExpired = session.expires_at && (Date.now() / 1000) >= (session.expires_at - 60);
+    if (!isExpired) return session.access_token;
+
+    if (!session.refresh_token) return null;
+
+    const { data, error } = await supabase.auth.refreshSession({ refresh_token: session.refresh_token });
+    if (data.session && !error) {
+      await this.storeSession(data.session, data.user?.email);
+      return data.session.access_token;
     }
+
+    await new Promise<void>(resolve => chrome.storage.local.remove([SESSION_KEY], resolve));
+    return null;
   }
 
   getState(): AccountState {
     return this.state;
   }
 
-  private async fetchEmail(): Promise<string | null> {
-    return new Promise((resolve) => {
-      chrome.identity.getProfileUserInfo({ accountStatus: 'ANY' }, (info) => {
-        resolve(info?.email ?? null);
-      });
-    });
+  private async storeSession(session: { access_token: string; refresh_token: string; expires_at?: number }, email?: string | null): Promise<void> {
+    const payload: StoredSession = {
+      access_token: session.access_token,
+      refresh_token: session.refresh_token,
+      expires_at: session.expires_at ?? Math.floor(Date.now() / 1000) + 3600,
+      user: { email: email ?? undefined },
+    };
+    await new Promise<void>(resolve => chrome.storage.local.set({ [SESSION_KEY]: payload }, resolve));
   }
 
   private transitionTo(nextState: AccountState, email?: string): void {
@@ -159,7 +199,7 @@ class SubscriptionManager {
       const response = await fetch(`${this.SERVER_URL}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ idToken: token })
+        body: JSON.stringify({ accessToken: token })
       });
       status = response.status;
 
@@ -174,19 +214,15 @@ class SubscriptionManager {
         return;
       }
 
-      // 401: the cached token is stale. Remove it from Chrome's cache and retry once
-      // with a fresh silent token. Logout is NOT triggered; the user stays SIGNED_IN.
+      // 401: the token is stale. Try to silently refresh via Supabase and retry once.
+      // Logout is NOT triggered; the user stays SIGNED_IN.
       if (status === 401 && !isRetry) {
         console.warn('SubscriptionManager.verify: 401 received, refreshing token silently.');
-        await new Promise<void>(resolve =>
-          chrome.identity.removeCachedAuthToken({ token }, resolve as any)
-        );
         const freshToken = await accountManager.getSilentToken();
         if (freshToken) {
           return this.verify(freshToken, true);
         }
-        // Chrome could not issue a new silent token (e.g. refresh token also expired).
-        // Show the error banner so the user can manually log out and re-authenticate.
+        // Refresh token also expired — show banner so user can re-authenticate.
         this.showBanner();
         return;
       }

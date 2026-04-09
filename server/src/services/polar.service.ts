@@ -9,9 +9,10 @@ const polar = new Polar({
 
 export class PolarService {
   /**
-   * Pro Plan 구매를 위한 Checkout Session 생성
+   * Creates a Polar checkout session for Pro plan purchase.
+   * The user_id metadata is the Supabase Auth UUID used to sync subscription state via webhook.
    */
-  static async createCheckoutSession(googleUserId: string, customerEmail: string, successUrl: string): Promise<string> {
+  static async createCheckoutSession(userId: string, customerEmail: string, successUrl: string): Promise<string> {
     try {
       if (!config.polarProProductId) {
         throw new Error('Polar Pro Product ID is not configured.');
@@ -22,19 +23,19 @@ export class PolarService {
         successUrl,
         customerEmail,
         metadata: {
-          google_user_id: googleUserId, // Webhook 동기화용 필수 필드
+          user_id: userId,
         },
       });
 
       return checkout.url;
     } catch (error: any) {
-      logger.error({ err: error, googleUserId }, 'Failed to create polar checkout session');
-      throw new Error('Polar Checkout Session 생성에 실패했습니다.');
+      logger.error({ err: error, userId }, 'Failed to create polar checkout session');
+      throw new Error('Failed to create Polar Checkout Session.');
     }
   }
 
   /**
-   * Free Plan으로의 다운그레이드 및 결제 관리를 위한 Customer Portal 세션 발급
+   * Creates a Polar Customer Portal session for subscription management.
    */
   static async createCustomerPortalSession(customerId: string): Promise<string> {
     try {
@@ -45,7 +46,7 @@ export class PolarService {
       return session.customerPortalUrl;
     } catch (error: any) {
       logger.error({ err: error, customerId }, 'Failed to create polar customer portal session');
-      throw new Error('Polar Customer Portal 생성에 실패했습니다.');
+      throw new Error('Failed to create Polar Customer Portal session.');
     }
   }
 }

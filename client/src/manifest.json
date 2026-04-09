@@ -12,7 +12,12 @@
     "identity"
   ],
   "host_permissions": [
-    "<all_urls>"
+    "http://localhost/*",
+    "https://polar.sh*",
+    "https://www.youtube.com/*",
+    "https://open.spotify.com/*",
+    "https://www.netflix.com/*",
+    "https://soundcloud.com/*"
   ],
   "side_panel": {
     "default_path": "src/popup/popup.html"
@@ -30,12 +35,5 @@
     "48": "/icons/icon-48.png",
     "128": "/icons/icon-128.png"
   },
-  "oauth2": {
-    "client_id": "asdfasdf",
-    "scopes": [
-      "https://www.googleapis.com/auth/userinfo.email",
-      "https://www.googleapis.com/auth/userinfo.profile"
-    ]
-  },
-  "key": "asdfasdf"
+  "key": "__EXTENSION_KEY__"
 }
