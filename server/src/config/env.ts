@@ -1,10 +1,26 @@
-import dotenv from 'dotenv';
+const isDeno = typeof (globalThis as any).Deno !== 'undefined';
 
-dotenv.config();
+/**
+ * Runtime-agnostic environment variable accessor.
+ * Reads from Deno.env in Edge Function context, process.env in Node.js.
+ */
+export const getEnv = (key: string): string => {
+  if (isDeno) {
+    return (globalThis as any).Deno.env.get(key) || '';
+  }
+  return process.env[key] || '';
+};
 
-const isProd = process.env.NODE_ENV === 'production';
+// Load .env file in Node.js only — Deno reads from Deno.env directly
+if (!isDeno) {
+  const { default: dotenv } = await import('dotenv');
+  dotenv.config();
+}
 
-const requireEnv = (key: string, value: string | undefined, defaultForDev: string) => {
+const isProd = getEnv('NODE_ENV') === 'production';
+
+const requireEnv = (key: string, defaultForDev: string = '') => {
+  const value = getEnv(key);
   if (!value) {
     if (isProd) {
       throw new Error(`CRITICAL: Missing required environment variable in production: ${key}`);
@@ -15,15 +31,16 @@ const requireEnv = (key: string, value: string | undefined, defaultForDev: strin
 };
 
 export const config = {
-  port: process.env.PORT || 8080,
-  jwtSecret: requireEnv('JWT_SECRET', process.env.JWT_SECRET, ''),
-  extensionId: requireEnv('EXTENSION_ID', process.env.EXTENSION_ID, ''),
-  supabaseUrl: requireEnv('SUPABASE_URL', process.env.SUPABASE_URL, ''),
-  supabaseServiceRoleKey: requireEnv('SUPABASE_SERVICE_ROLE_KEY', process.env.SUPABASE_SERVICE_ROLE_KEY, ''),
-  polarWebhookSecret: process.env.POLAR_WEBHOOK_SECRET || '',
-  polarAccessToken: process.env.POLAR_ACCESS_TOKEN || '',
-  polarProProductId: process.env.POLAR_PRO_PRODUCT_ID || '',
-  cloudServerUrl: process.env.CLOUDSERVER_URL || `http://localhost:${process.env.PORT || 8080}`,
+  port: getEnv('PORT') || '8080',
+  jwtSecret: requireEnv('JWT_SECRET'),
+  extensionId: requireEnv('EXTENSION_ID'),
+  supabaseUrl: requireEnv('SUPABASE_URL'),
+  supabaseServiceRoleKey: requireEnv('SUPABASE_SERVICE_ROLE_KEY'),
+  polarWebhookSecret: getEnv('POLAR_WEBHOOK_SECRET'),
+  polarAccessToken: getEnv('POLAR_ACCESS_TOKEN'),
+  polarProProductId: getEnv('POLAR_PRO_PRODUCT_ID'),
+  cloudServerUrl: getEnv('CLOUDSERVER_URL') || `http://localhost:${getEnv('PORT') || '8080'}`,
+  isProd,
 };
 
 export default config;

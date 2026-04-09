@@ -16,7 +16,8 @@
     "dotenv": "^16.4.7",
     "express": "^5.2.1",
     "express-rate-limit": "^8.3.1",
-"helmet": "^8.0.0",
+    "helmet": "^8.0.0",
+    "jose": "^5.9.6",
     "jsonwebtoken": "^9.0.2",
     "pino": "^9.6.0",
     "pino-http": "^10.4.0",
@@ -29,6 +30,7 @@
     "@types/jsonwebtoken": "^9.0.9",
     "@types/node": "^22.13.9",
     "@types/pino-http": "^5.8.4",
+    "supabase": "^2.88.1",
     "tsx": "^4.19.3",
     "typescript": "^5.9.3"
   }

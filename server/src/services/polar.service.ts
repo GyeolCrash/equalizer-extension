@@ -4,7 +4,7 @@ import logger from '../logger.js';
 
 const polar = new Polar({
     accessToken: config.polarAccessToken,
-    server: process.env.NODE_ENV === 'production' ? 'production' : 'sandbox',
+    server: config.isProd ? 'production' : 'sandbox',
 });
 
 export class PolarService {
