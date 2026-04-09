@@ -2,12 +2,12 @@ import express, { Express, Request, Response } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
-import logger from './logger.js';
-import config from './config/env.js';
-import userRouter from './routes/user.js';
-import authRouter from './routes/auth.js';
-import webhookRouter from './routes/webhooks.js';
-import successRouter from './routes/success.js';
+import logger from './logger.ts';
+import config from './config/env.ts';
+import userRouter from './routes/user.ts';
+import authRouter from './routes/auth.ts';
+import webhookRouter from './routes/webhooks.ts';
+import successRouter from './routes/success.ts';
 
 const app: Express = express();
 const port = config.port;

@@ -1,9 +1,9 @@
 import express, { Request, Response } from 'express';
-import logger from '../logger.js';
+import logger from '../logger.ts';
 import { validateEvent, WebhookVerificationError } from '@polar-sh/sdk/webhooks';
-import config from '../config/env.js';
-import { UserDAO } from '../dao/user.dao.js';
-import { PlanType, SubscriptionStatus } from '../types/user.types.js';
+import config from '../config/env.ts';
+import { UserDAO } from '../dao/user.dao.ts';
+import { PlanType, SubscriptionStatus } from '../types/user.types.ts';
 
 const webhookRouter = express.Router();
 

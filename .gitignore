@@ -60,9 +60,11 @@ ehthumbs.db
 Desktop.ini
 $RECYCLE.BIN/
 
-
 totemic-chalice-491709-s9-0c522b4c17e4.json
 *.txt
 agents/
 /.claude/*
 CLAUDE.md
+/server/supabase
+plan-progress.md
+server/supabase/config.toml

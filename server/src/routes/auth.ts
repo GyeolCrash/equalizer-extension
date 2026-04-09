@@ -1,7 +1,7 @@
 import express from 'express';
 import { z } from 'zod';
-import { validateRequest } from '../middleware/validate.js';
-import { AuthController } from '../controllers/auth.controller.js';
+import { validateRequest } from '../middleware/validate.ts';
+import { AuthController } from '../controllers/auth.controller.ts';
 
 const authRouter = express.Router();
 

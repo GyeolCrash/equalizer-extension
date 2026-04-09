@@ -1,5 +1,5 @@
-import { supabase } from '../config/supabase.config.js';
-import logger from '../logger.js';
+import { supabase } from '../config/supabase.config.ts';
+import logger from '../logger.ts';
 
 export class AuthService {
   /**

@@ -1,8 +1,8 @@
 import { Request, Response } from 'express';
-import { PolarService } from '../services/polar.service.js';
-import { UserDAO } from '../dao/user.dao.js';
-import logger from '../logger.js';
-import config from '../config/env.js';
+import { PolarService } from '../services/polar.service.ts';
+import { UserDAO } from '../dao/user.dao.ts';
+import logger from '../logger.ts';
+import config from '../config/env.ts';
 
 export class PaymentController {
     /**

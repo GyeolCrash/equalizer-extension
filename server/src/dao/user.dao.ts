@@ -1,6 +1,6 @@
-import { supabase } from '../config/supabase.config.js';
-import { UserProfile, UserCreateData } from '../types/user.types.js';
-import logger from '../logger.js';
+import { supabase } from '../config/supabase.config.ts';
+import { UserProfile, UserCreateData } from '../types/user.types.ts';
+import logger from '../logger.ts';
 
 export class UserDAO {
   /**

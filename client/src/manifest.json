@@ -13,7 +13,7 @@
   ],
   "host_permissions": [
     "http://localhost/*",
-    "https://polar.sh*",
+    "https://polar.sh/*",
     "https://www.youtube.com/*",
     "https://open.spotify.com/*",
     "https://www.netflix.com/*",

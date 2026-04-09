@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { z, AnyZodObject, ZodError } from 'zod';
-import logger from '../logger.js';
+import logger from '../logger.ts';
 
 // Step 2: Enforce Request Validation (Zod)
 export const validateRequest = (schema: AnyZodObject) => {

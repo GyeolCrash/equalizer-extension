@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import config from './env.js';
+import config from './env.ts';
 
 /**
  * Supabase Admin client initialized with the service role key.

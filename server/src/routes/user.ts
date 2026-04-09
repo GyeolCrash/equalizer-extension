@@ -1,6 +1,6 @@
 import express, { Request, Response } from 'express';
-import { requireAuth, AuthenticatedRequest } from '../middleware/auth.js';
-import { UserDAO } from '../dao/user.dao.js';
+import { requireAuth, AuthenticatedRequest } from '../middleware/auth.ts';
+import { UserDAO } from '../dao/user.dao.ts';
 
 const userRouter = express.Router();
 

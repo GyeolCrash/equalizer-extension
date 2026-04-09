@@ -1,6 +1,6 @@
 import { Polar } from '@polar-sh/sdk';
-import config from '../config/env.js';
-import logger from '../logger.js';
+import config from '../config/env.ts';
+import logger from '../logger.ts';
 
 const polar = new Polar({
     accessToken: config.polarAccessToken,

@@ -1,9 +1,9 @@
 import { Request, Response } from 'express';
-import { AuthService } from '../services/auth.service.js';
-import { UserDAO } from '../dao/user.dao.js';
+import { AuthService } from '../services/auth.service.ts';
+import { UserDAO } from '../dao/user.dao.ts';
 import jwt from 'jsonwebtoken';
-import logger from '../logger.js';
-import config from '../config/env.js';
+import logger from '../logger.ts';
+import config from '../config/env.ts';
 
 const JWT_SECRET = config.jwtSecret;
 
