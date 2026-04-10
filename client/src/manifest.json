@@ -17,7 +17,18 @@
     "https://www.youtube.com/*",
     "https://open.spotify.com/*",
     "https://www.netflix.com/*",
-    "https://soundcloud.com/*"
+    "https://soundcloud.com/*",
+    "__AUTH_CALLBACK_ORIGIN__/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "http://localhost:8080/auth/callback*",
+        "__AUTH_CALLBACK_ORIGIN__/auth/callback*"
+      ],
+      "js": ["auth-callback.js"],
+      "run_at": "document_idle"
+    }
   ],
   "side_panel": {
     "default_path": "src/popup/popup.html"

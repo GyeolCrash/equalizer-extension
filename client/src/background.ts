@@ -131,4 +131,11 @@ async function stopAudioCapture() {
   await closeOffscreenDocument();
 }
 
+// Receives magic link tokens from the auth-callback content script and stores them for the popup to pick up.
+chrome.runtime.onMessage.addListener((msg) => {
+  if (msg.type === 'MAGIC_LINK_CALLBACK' && msg.payload?.access_token) {
+    chrome.storage.local.set({ pending_auth: msg.payload });
+  }
+});
+
 export { };

@@ -37,6 +37,32 @@ app.use(cors({
 app.use('/api/webhooks', webhookRouter);
 app.use('/success', successRouter);
 
+// Auth callback page: magic link redirects here. Tokens are in the URL fragment (never sent to server).
+// The injected content script reads them and forwards to the extension background service worker.
+app.get('/auth/callback', (_req: Request, res: Response) => {
+  res.status(200).send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Signed In</title>
+  <style>
+    body{font-family:'Segoe UI',sans-serif;display:flex;justify-content:center;align-items:center;height:100vh;background:#1a1a1a;margin:0;color:#fff}
+    .card{background:#222;padding:2.5rem;border-radius:12px;box-shadow:0 4px 6px rgba(0,0,0,.4);text-align:center;border-top:5px solid #4caf50;max-width:400px}
+    h1{margin-bottom:10px}.icon{font-size:3rem;margin-bottom:10px}p{color:#aaa;margin-top:1rem}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon">&#10003;</div>
+    <h1>Signed in successfully</h1>
+    <p>You can close this tab and return to the extension.</p>
+  </div>
+  <script>setTimeout(()=>window.close(),5000);</script>
+</body>
+</html>`);
+});
+
 app.use(express.json());
 
 app.use((req: Request, res: Response, next) => {

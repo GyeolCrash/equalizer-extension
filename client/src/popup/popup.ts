@@ -1,10 +1,20 @@
-import { createClient } from '@supabase/supabase-js';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
-const supabase = createClient(
-  import.meta.env.VITE_SUPABASE_URL as string,
-  import.meta.env.VITE_SUPABASE_ANON_KEY as string,
-  { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } }
-);
+let _supabaseInstance: SupabaseClient | null = null;
+
+function getSupabase(): SupabaseClient {
+  if (!_supabaseInstance) {
+    const url = import.meta.env.VITE_SUPABASE_URL as string | undefined;
+    const key = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+    if (!url || !key) {
+      throw new Error('Supabase configuration is missing (VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY). Rebuild with a valid .env file.');
+    }
+    _supabaseInstance = createClient(url, key, {
+      auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false }
+    });
+  }
+  return _supabaseInstance;
+}
 
 const SESSION_KEY = 'supabase_session';
 
@@ -24,14 +34,17 @@ interface EQNode {
   color: string;
 }
 
-// Account states for the 2-state machine.
-type AccountState = 'SIGNED_IN' | 'SIGNED_OUT';
+// Account states for the 3-state machine.
+type AccountState = 'SIGNED_IN' | 'SIGNED_OUT' | 'LINK_SENT';
 
 class AccountManager {
   private state: AccountState = 'SIGNED_OUT';
 
-  // Restores sign-in state from chrome.storage. Refreshes the session if the access token is near expiry.
+  // Restores sign-in state from chrome.storage. Checks for a pending magic link first.
   async initialize(): Promise<void> {
+    await this.processPendingAuth();
+    if (this.state === 'SIGNED_IN') return;
+
     const stored = await new Promise<{ [SESSION_KEY]?: StoredSession }>(resolve =>
       chrome.storage.local.get([SESSION_KEY], resolve as any)
     );
@@ -48,7 +61,7 @@ class AccountManager {
     }
 
     if (session.refresh_token) {
-      const { data, error } = await supabase.auth.refreshSession({ refresh_token: session.refresh_token });
+      const { data, error } = await getSupabase().auth.refreshSession({ refresh_token: session.refresh_token });
       if (data.session && !error) {
         await this.storeSession(data.session, data.user?.email);
         this.transitionTo('SIGNED_IN', data.user?.email);
@@ -60,46 +73,58 @@ class AccountManager {
     this.transitionTo('SIGNED_OUT');
   }
 
-  // Launches Supabase OAuth (Google) via launchWebAuthFlow. Returns the Supabase access token on success.
-  async login(): Promise<string | null> {
-    const redirectUrl = chrome.identity.getRedirectURL();
-    const { data, error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: { redirectTo: redirectUrl, skipBrowserRedirect: true },
+  // Sends a Supabase magic link to the given email address.
+  async sendMagicLink(email: string): Promise<'ok' | 'rate_limit' | 'error'> {
+    const serverUrl = (import.meta.env.VITE_SERVER_URL as string | undefined) || 'http://localhost:8080';
+    const { error } = await getSupabase().auth.signInWithOtp({
+      email,
+      options: { emailRedirectTo: `${serverUrl}/auth/callback`, shouldCreateUser: true },
     });
+    if (error) {
+      console.error('AccountManager.sendMagicLink: failed', error);
+      return error.message?.toLowerCase().includes('rate limit') ? 'rate_limit' : 'error';
+    }
+    this.transitionTo('LINK_SENT');
+    return 'ok';
+  }
 
-    if (error || !data.url) {
-      console.error('AccountManager.login: failed to get OAuth URL', error);
-      return null;
+  // Processes a pending_auth entry written by the background service worker after a magic link click.
+  async processPendingAuth(): Promise<void> {
+    const stored = await new Promise<{ pending_auth?: { access_token: string; refresh_token: string; expires_at: number } }>(
+      resolve => chrome.storage.local.get(['pending_auth'], resolve as any)
+    );
+    const pending = stored.pending_auth;
+    if (!pending?.access_token) return;
+
+    await new Promise<void>(resolve => chrome.storage.local.remove(['pending_auth'], resolve));
+
+    if (pending.expires_at && (Date.now() / 1000) >= pending.expires_at) {
+      this.transitionTo('SIGNED_OUT');
+      return;
     }
 
-    return new Promise((resolve) => {
-      chrome.identity.launchWebAuthFlow({ url: data.url!, interactive: true }, async (callbackUrl) => {
-        if (chrome.runtime.lastError || !callbackUrl) {
-          console.error('AccountManager.login: launchWebAuthFlow failed', chrome.runtime.lastError);
-          resolve(null);
-          return;
-        }
+    let email: string | undefined;
+    try {
+      const { data } = await getSupabase().auth.getUser(pending.access_token);
+      email = data.user?.email ?? undefined;
+    } catch { /* ignore — email display is optional */ }
 
-        const hash = new URLSearchParams(new URL(callbackUrl).hash.substring(1));
-        const access_token = hash.get('access_token');
-        const refresh_token = hash.get('refresh_token');
+    await this.storeSession(
+      { access_token: pending.access_token, refresh_token: pending.refresh_token, expires_at: pending.expires_at },
+      email
+    );
+    this.transitionTo('SIGNED_IN', email);
+  }
 
-        if (!access_token || !refresh_token) { resolve(null); return; }
-
-        const { data: sessionData, error: setError } = await supabase.auth.setSession({ access_token, refresh_token });
-        if (setError || !sessionData.session) { resolve(null); return; }
-
-        await this.storeSession(sessionData.session, sessionData.user?.email ?? undefined);
-        this.transitionTo('SIGNED_IN', sessionData.user?.email ?? undefined);
-        resolve(access_token);
-      });
-    });
+  // Cancels the LINK_SENT state and returns to SIGNED_OUT.
+  cancelLinkSent(): void {
+    chrome.storage.local.remove(['pending_auth']);
+    this.transitionTo('SIGNED_OUT');
   }
 
   // Signs out from Supabase and clears the stored session.
   async logout(): Promise<void> {
-    await supabase.auth.signOut().catch(() => { });
+    await getSupabase().auth.signOut().catch(() => { });
     await new Promise<void>(resolve => chrome.storage.local.remove([SESSION_KEY], resolve));
     this.transitionTo('SIGNED_OUT');
   }
@@ -117,7 +142,7 @@ class AccountManager {
 
     if (!session.refresh_token) return null;
 
-    const { data, error } = await supabase.auth.refreshSession({ refresh_token: session.refresh_token });
+    const { data, error } = await getSupabase().auth.refreshSession({ refresh_token: session.refresh_token });
     if (data.session && !error) {
       await this.storeSession(data.session, data.user?.email);
       return data.session.access_token;
@@ -145,23 +170,32 @@ class AccountManager {
     this.state = nextState;
 
     const emailSpan = document.getElementById('accountEmail');
-    const loginBtn = document.getElementById('googleLoginBtn') as HTMLButtonElement | null;
-    const logoutBtn = document.getElementById('googleLogoutBtn') as HTMLButtonElement | null;
+    const signedOutSection = document.getElementById('accountSignedOut');
+    const signedInSection = document.getElementById('accountSignedIn');
+    const magicLinkForm = document.getElementById('magicLinkForm');
+    const linkSentMsg = document.getElementById('linkSentMsg');
 
     if (nextState === 'SIGNED_IN') {
+      if (signedOutSection) signedOutSection.style.display = 'none';
+      if (signedInSection) signedInSection.style.display = 'flex';
       if (emailSpan) {
         emailSpan.textContent = email ?? '';
-        emailSpan.style.display = email ? 'inline' : 'none';
+        emailSpan.style.display = email ? 'block' : 'none';
       }
-      if (loginBtn) loginBtn.style.display = 'none';
-      if (logoutBtn) logoutBtn.style.display = 'block';
+    } else if (nextState === 'LINK_SENT') {
+      if (signedOutSection) signedOutSection.style.display = 'flex';
+      if (signedInSection) signedInSection.style.display = 'none';
+      if (magicLinkForm) magicLinkForm.style.display = 'none';
+      if (linkSentMsg) linkSentMsg.style.display = 'flex';
     } else {
+      if (signedOutSection) signedOutSection.style.display = 'flex';
+      if (signedInSection) signedInSection.style.display = 'none';
+      if (magicLinkForm) magicLinkForm.style.display = 'flex';
+      if (linkSentMsg) linkSentMsg.style.display = 'none';
       if (emailSpan) {
         emailSpan.textContent = '';
         emailSpan.style.display = 'none';
       }
-      if (loginBtn) loginBtn.style.display = 'flex';
-      if (logoutBtn) logoutBtn.style.display = 'none';
     }
   }
 }
@@ -171,8 +205,8 @@ class SubscriptionManager {
   private retryCount = 0;
   private readonly CACHE_TTL = 24 * 60 * 60 * 1000;
   private readonly GRACE_PERIOD = 7 * 24 * 60 * 60 * 1000;
-  private readonly SERVER_URL = "http://localhost:8080/api";
-  // private readonly SERVER_URL = 'https://audio-manipulator-backend-409927108308.us-central1.run.app/api';
+  //private readonly SERVER_URL = "http://localhost:8080/api";
+  private readonly SERVER_URL = 'https://xgxcqnfzmwtlqzjtjvpe.supabase.co/functions/v1/main';
 
   // Loads from cache only. Does NOT call the backend or request a token.
   async initializeFromCache(): Promise<void> {
@@ -248,7 +282,7 @@ class SubscriptionManager {
 
   // Forces a backend re-check using a provided token. Spins the refresh icon.
   async forceSync(token: string): Promise<void> {
-    const icon = document.querySelector('#refreshSubBtn svg');
+    const icon = document.querySelector('#refreshSubBtn2 svg');
     if (icon) icon.classList.add('spin');
 
     this.retryCount = 0;
@@ -264,7 +298,7 @@ class SubscriptionManager {
 
   updateUIPerPlan(): void {
     const headerBadge = document.getElementById('headerPlanBadge');
-    const settingsBadge = document.getElementById('settingsPlanBadge');
+    const settingsBadge = document.getElementById('accountPlanBadge');
     const upgradeBox = document.getElementById('upgradeToProContainer');
 
     const className = this.isPro ? 'pro' : 'free';
@@ -956,30 +990,78 @@ document.addEventListener('DOMContentLoaded', async () => {
     chrome.runtime.reload();
   });
 
-  // Login: acquires token interactively, transitions account UI, then forwards token to subscription.
-  document.getElementById('googleLoginBtn')?.addEventListener('click', async () => {
-    const token = await accountManager.login();
-    if (token) {
-      await subscriptionManager.verify(token);
+  function startSendCooldown(btn: HTMLButtonElement | null, seconds: number) {
+    if (!btn) return;
+    let remaining = seconds;
+    btn.disabled = true;
+    btn.textContent = `Resend (${remaining}s)`;
+    const timer = setInterval(() => {
+      remaining--;
+      if (remaining <= 0) {
+        clearInterval(timer);
+        btn.disabled = false;
+        btn.textContent = 'Send Link';
+      } else {
+        btn.textContent = `Resend (${remaining}s)`;
+      }
+    }, 1000);
+  }
+
+  // Send magic link: validates email then requests OTP from Supabase.
+  document.getElementById('sendMagicLinkBtn')?.addEventListener('click', async () => {
+    const emailInput = document.getElementById('emailInput') as HTMLInputElement | null;
+    const email = emailInput?.value.trim();
+    if (!email) return;
+
+    const btn = document.getElementById('sendMagicLinkBtn') as HTMLButtonElement | null;
+    const errEl = document.getElementById('magicLinkError');
+    if (errEl) errEl.textContent = '';
+    if (btn) { btn.disabled = true; btn.textContent = 'Sending...'; }
+
+    const result = await accountManager.sendMagicLink(email);
+
+    if (result === 'ok') {
+      startSendCooldown(btn, 60);
+    } else if (result === 'rate_limit') {
+      if (errEl) errEl.textContent = 'Too many requests. Please wait a minute before trying again.';
+      startSendCooldown(btn, 60);
+    } else {
+      if (errEl) errEl.textContent = 'Failed to send link. Please try again.';
+      if (btn) { btn.disabled = false; btn.textContent = 'Send Link'; }
     }
   });
 
+  // Cancel: return to email entry form.
+  document.getElementById('cancelMagicLinkBtn')?.addEventListener('click', () => {
+    accountManager.cancelLinkSent();
+    const btn = document.getElementById('sendMagicLinkBtn') as HTMLButtonElement | null;
+    if (btn) { btn.disabled = false; btn.textContent = 'Send Link'; }
+  });
+
   // Logout: revokes token, resets account UI, resets subscription to FREE.
-  document.getElementById('googleLogoutBtn')?.addEventListener('click', async () => {
+  document.getElementById('logoutBtn')?.addEventListener('click', async () => {
     await accountManager.logout();
     subscriptionManager.clearAndReset();
   });
 
-  // Refresh: silent token fetch -> backend DB call only. Does NOT touch account UI.
-  document.getElementById('refreshSubBtn')?.addEventListener('click', async () => {
+  // Refresh subscription: silent token fetch -> backend DB call only.
+  document.getElementById('refreshSubBtn2')?.addEventListener('click', async () => {
     const token = await accountManager.getSilentToken();
-    if (token) {
-      await subscriptionManager.forceSync(token);
-    }
+    if (token) await subscriptionManager.forceSync(token);
   });
 
-  document.getElementById('manageSubBtn')?.addEventListener('click', () => {
+  document.getElementById('manageSubBtn2')?.addEventListener('click', () => {
     subscriptionManager.openCustomerPortal();
+  });
+
+  // Detect magic link completion while the popup is open.
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'local' && changes.pending_auth?.newValue) {
+      accountManager.processPendingAuth().then(async () => {
+        const token = await accountManager.getSilentToken();
+        if (token) subscriptionManager.verify(token);
+      });
+    }
   });
 
   document.getElementById('upgradeToProBtn')?.addEventListener('click', () => {

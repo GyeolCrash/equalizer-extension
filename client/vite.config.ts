@@ -6,6 +6,7 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, path.resolve(__dirname, '..'), '');
 
   return {
+    envDir: path.resolve(__dirname, '..'),
     server: {
       port: 5173,
       hmr: true
@@ -18,7 +19,8 @@ export default defineConfig(({ mode }) => {
         input: {
           popup: path.resolve(__dirname, 'src/popup/popup.html'),
           background: path.resolve(__dirname, 'src/background.ts'),
-          offscreen: path.resolve(__dirname, 'src/offscreen.html')
+          offscreen: path.resolve(__dirname, 'src/offscreen.html'),
+          'auth-callback': path.resolve(__dirname, 'src/auth-callback.ts'),
         },
         output: {
           entryFileNames: '[name].js',
@@ -37,7 +39,8 @@ export default defineConfig(({ mode }) => {
           );
 
           manifestContent = manifestContent
-            .replace(/__EXTENSION_KEY__/g, env.VITE_EXTENSION_KEY || '');
+            .replace(/__EXTENSION_KEY__/g, env.VITE_EXTENSION_KEY || '')
+            .replace(/__AUTH_CALLBACK_ORIGIN__/g, env.VITE_SERVER_URL || 'http://localhost:8080');
 
           this.emitFile({
             fileName: 'manifest.json',
